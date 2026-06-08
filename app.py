@@ -57,6 +57,73 @@ def _github_put_file(repo_path, data_bytes, message):
     return None
 
 
+_GH_HDR = {"Accept": "application/vnd.github+json", "User-Agent": "collage-tool"}
+GALLERY_CAP = 40  # cuantos collages se conservan en la galeria
+
+
+def _gh_raw(repo_path):
+    return f"https://raw.githubusercontent.com/{GH_REPO}/main/{repo_path}"
+
+
+def _github_list(folder):
+    """Lista archivos .png de una carpeta del repo: [{name, path, sha}]."""
+    if not (GH_TOKEN and GH_REPO):
+        return []
+    try:
+        r = creq.get(f"https://api.github.com/repos/{GH_REPO}/contents/{folder}",
+                     headers={**_GH_HDR, "Authorization": f"Bearer {GH_TOKEN}"},
+                     timeout=30)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        if not isinstance(data, list):
+            return []
+        return [{"name": x["name"], "path": x["path"], "sha": x["sha"]}
+                for x in data if str(x.get("name", "")).endswith(".png")]
+    except Exception:
+        return []
+
+
+def _github_delete(path, sha):
+    if not (GH_TOKEN and GH_REPO and path and sha):
+        return
+    try:
+        creq.delete(f"https://api.github.com/repos/{GH_REPO}/contents/{path}",
+                    headers={**_GH_HDR, "Authorization": f"Bearer {GH_TOKEN}"},
+                    json={"message": f"borrar {path}", "sha": sha, "branch": "main"},
+                    timeout=30)
+    except Exception:
+        pass
+
+
+def _cap_gallery():
+    """Mantiene la galeria en <= GALLERY_CAP, sin borrar las programadas."""
+    files = _github_list("gallery")
+    if len(files) <= GALLERY_CAP:
+        return
+    protected = set()
+    for it in _get_schedule():
+        iu = it.get("image_url") or ""
+        if iu:
+            protected.add(iu.split("/")[-1])
+
+    def ts_of(f):
+        try:
+            return int(f["name"].split("_")[0])
+        except Exception:
+            return 0
+
+    files.sort(key=ts_of)  # mas viejos primero
+    to_delete = len(files) - GALLERY_CAP
+    for f in files:
+        if to_delete <= 0:
+            break
+        if f["name"] in protected:
+            continue
+        _github_delete(f["path"], f["sha"])
+        to_delete -= 1
+
+
 def _render_env_get(key):
     if not (RENDER_KEY and RENDER_BASE):
         return None
@@ -213,19 +280,29 @@ def api_collage():
     _last["png"] = png
     _last["name"] = f"collage_{int(time.time())}.png"
 
-    # guardar como archivo publico (para poder publicarlo en Instagram)
-    _purge_old()
-    fname = f"{uuid.uuid4().hex}.png"
-    with open(os.path.join(GEN_DIR, fname), "wb") as fh:
-        fh.write(png)
-    image_path = f"/static/generated/{fname}"
+    resp = {"image": f"data:image/png;base64,{base64.b64encode(png).decode()}",
+            "name": _last["name"]}
 
-    b64 = base64.b64encode(png).decode()
-    return jsonify({
-        "image": f"data:image/png;base64,{b64}",
-        "name": _last["name"],
-        "image_path": image_path,
-    })
+    if GH_TOKEN and GH_REPO:
+        # galeria PERMANENTE en GitHub (no se borra al reiniciar Render)
+        ts = int(time.time())
+        gid = uuid.uuid4().hex[:10]
+        repo_path = f"gallery/{ts}_{gid}.png"
+        image_url = _github_put_file(repo_path, png, f"galeria {gid}")
+        if image_url:
+            _cap_gallery()
+            resp["image_url"] = image_url
+        else:
+            return jsonify({"error": "No pude guardar el collage en la galeria."}), 500
+    else:
+        # respaldo local: disco temporal
+        _purge_old()
+        fname = f"{uuid.uuid4().hex}.png"
+        with open(os.path.join(GEN_DIR, fname), "wb") as fh:
+            fh.write(png)
+        resp["image_path"] = f"/static/generated/{fname}"
+
+    return jsonify(resp)
 
 
 @app.get("/api/ig_status")
@@ -253,12 +330,9 @@ def api_publish():
         return jsonify({"error": "Falta configurar Instagram (token). Avisa para conectarlo."}), 400
 
     body = request.json or {}
-    image_path = body.get("image_path", "")
-    if not image_path.startswith("/static/generated/"):
+    public_url = _src_public_url(body)
+    if not public_url:
         return jsonify({"error": "Genera el collage primero."}), 400
-
-    # URL publica del collage (forzar https para que Instagram lo pueda leer)
-    public_url = f"https://{request.host}{image_path}"
 
     try:
         ig_user = _ig_user_id(token)
@@ -299,9 +373,35 @@ def _ig_err(ctx, payload):
     return f"Instagram rechazo {ctx}: {msg}"
 
 
+def _src_public_url(body):
+    """URL publica de la imagen: GitHub (permanente) o disco de Render."""
+    image_url = body.get("image_url", "") or ""
+    image_path = body.get("image_path", "") or ""
+    if image_url.startswith("http"):
+        return image_url
+    if image_path.startswith("/static/generated/"):
+        return f"https://{request.host}{image_path}"
+    return None
+
+
 @app.get("/api/generated")
 def api_generated():
-    """Lista los collages generados (galeria), mas recientes primero."""
+    """Lista los collages de la galeria, mas recientes primero."""
+    if GH_TOKEN and GH_REPO:
+        sched_map = {it.get("image_url"): it.get("publish_at") for it in _get_schedule()}
+        items = []
+        for f in _github_list("gallery"):
+            url = _gh_raw(f["path"])
+            try:
+                ts = int(f["name"].split("_")[0])
+            except Exception:
+                ts = 0
+            items.append({"path": url, "image_url": url, "ts": ts,
+                          "scheduled_at": sched_map.get(url)})
+        items.sort(key=lambda x: -x["ts"])
+        return jsonify({"items": items[:60]})
+
+    # respaldo local
     items = []
     sched_map = {it.get("image_path"): it.get("publish_at") for it in _get_schedule()}
     try:
@@ -309,7 +409,8 @@ def api_generated():
             if f.endswith(".png"):
                 p = os.path.join(GEN_DIR, f)
                 path = f"/static/generated/{f}"
-                items.append({"path": path, "ts": int(os.path.getmtime(p)),
+                items.append({"path": path, "image_url": None,
+                              "ts": int(os.path.getmtime(p)),
                               "scheduled_at": sched_map.get(path)})
     except Exception:
         pass
@@ -321,17 +422,24 @@ def api_generated():
 def api_delete_generated():
     """Borra un collage de la galeria."""
     body = request.json or {}
-    image_path = body.get("image_path", "")
-    if not image_path.startswith("/static/generated/"):
-        return jsonify({"error": "Ruta invalida."}), 400
-    fname = os.path.basename(image_path)
-    p = os.path.join(GEN_DIR, fname)
-    try:
-        if os.path.exists(p):
-            os.remove(p)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    return jsonify({"ok": True})
+    image_url = body.get("image_url", "") or ""
+    image_path = body.get("image_path", "") or ""
+    if image_url.startswith("http") and GH_TOKEN and GH_REPO:
+        fname = image_url.split("/")[-1]
+        for f in _github_list("gallery"):
+            if f["name"] == fname:
+                _github_delete(f["path"], f["sha"])
+                break
+        return jsonify({"ok": True})
+    if image_path.startswith("/static/generated/"):
+        p = os.path.join(GEN_DIR, os.path.basename(image_path))
+        try:
+            if os.path.exists(p):
+                os.remove(p)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        return jsonify({"ok": True})
+    return jsonify({"error": "Ruta invalida."}), 400
 
 
 @app.post("/api/schedule")
@@ -340,10 +448,7 @@ def api_schedule():
     if not (RENDER_KEY and RENDER_BASE):
         return jsonify({"error": "La programacion no esta disponible (falta config del servidor)."}), 400
     body = request.json or {}
-    image_path = body.get("image_path", "")
     publish_at = body.get("publish_at")
-    if not image_path.startswith("/static/generated/"):
-        return jsonify({"error": "Genera el collage primero."}), 400
     try:
         publish_at = int(publish_at)
     except (TypeError, ValueError):
@@ -351,25 +456,29 @@ def api_schedule():
     if publish_at < int(time.time()) - 60:
         return jsonify({"error": "Esa hora ya paso. Elige una futura."}), 400
 
-    # Subir la imagen a GitHub (permanente) para que no se pierda si Render reinicia
-    fname = image_path.split("/")[-1]
-    local = os.path.join(GEN_DIR, fname)
-    if not os.path.exists(local):
-        return jsonify({"error": "Ese collage ya no esta disponible. Generalo de nuevo."}), 400
-
     sid = uuid.uuid4().hex[:10]
-    image_url = None
-    if GH_TOKEN and GH_REPO:
+    image_url = body.get("image_url", "") or ""
+    image_path = body.get("image_path", "") or ""
+
+    if image_url.startswith("http"):
+        # ya es permanente (galeria de GitHub); solo se referencia
+        item = {"id": sid, "image_url": image_url, "image_path": None,
+                "repo_path": None, "publish_at": publish_at, "attempts": 0}
+    elif image_path.startswith("/static/generated/") and GH_TOKEN and GH_REPO:
+        local = os.path.join(GEN_DIR, os.path.basename(image_path))
+        if not os.path.exists(local):
+            return jsonify({"error": "Ese collage ya no esta disponible. Generalo de nuevo."}), 400
         with open(local, "rb") as fh:
-            image_url = _github_put_file(f"sched/{sid}.png", fh.read(),
-                                         f"programar {sid}")
-        if not image_url:
-            return jsonify({"error": "No pude guardar la imagen para programar. Intenta de nuevo."}), 500
+            url = _github_put_file(f"sched/{sid}.png", fh.read(), f"programar {sid}")
+        if not url:
+            return jsonify({"error": "No pude guardar la imagen para programar."}), 500
+        item = {"id": sid, "image_url": url, "image_path": image_path,
+                "repo_path": f"sched/{sid}.png", "publish_at": publish_at, "attempts": 0}
+    else:
+        return jsonify({"error": "Genera el collage primero."}), 400
 
     items = _get_schedule()
-    items.append({"id": sid, "image_path": image_path, "image_url": image_url,
-                  "repo_path": f"sched/{sid}.png" if image_url else None,
-                  "publish_at": publish_at, "attempts": 0})
+    items.append(item)
     if not _set_schedule(items):
         return jsonify({"error": "No pude guardar la programacion."}), 500
     return jsonify({"ok": True})

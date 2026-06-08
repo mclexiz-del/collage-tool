@@ -363,7 +363,7 @@ async function generar(){
     const dl = $('dlLink');
     dl.href = d.image; dl.download = d.name || 'collage.png';
     dl.style.display = 'block';
-    lastImagePath = d.image_path || '';
+    lastImagePath = d.image_url || d.image_path || '';
     $('pubMsg').innerHTML = '';
     if(lastImagePath) $('pubBtn').style.display = 'block';
     loadGallery();
@@ -378,7 +378,7 @@ async function publicar(){
   $('pubMsg').innerHTML = '';
   try{
     const r = await fetch('/api/publish', {method:'POST',
-      headers:{'Content-Type':'application/json'}, body:JSON.stringify({image_path:lastImagePath})});
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(srcBody(lastImagePath))});
     const d = await r.json();
     if(!r.ok) throw new Error(d.error || 'Error');
     $('pubMsg').innerHTML = '<div style="color:var(--ok);margin-top:10px;font-weight:600">✓ ¡Publicado en tu historia de Instagram!</div>';
@@ -387,6 +387,8 @@ async function publicar(){
 }
 
 // ===================== GALERIA Y PROGRAMACION =====================
+// la imagen puede ser una URL permanente (GitHub) o una ruta local (Render)
+function srcBody(p){ return p && p.startsWith('http') ? {image_url:p} : {image_path:p}; }
 function pad(n){ return String(n).padStart(2,'0'); }
 function defaultDT(){
   const d = new Date(Date.now() + 2*3600*1000); d.setMinutes(0);
@@ -425,7 +427,7 @@ async function pubNow(path, k){
   const m = $('msg_'+k); m.style.color='var(--muted)'; m.textContent='Publicando...';
   try{
     const r = await fetch('/api/publish',{method:'POST',
-      headers:{'Content-Type':'application/json'}, body:JSON.stringify({image_path:path})});
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(srcBody(path))});
     const d = await r.json(); if(!r.ok) throw new Error(d.error||'Error');
     m.style.color='var(--ok)'; m.textContent='✓ Publicado en tu historia';
   }catch(e){ m.style.color='#ff8aa0'; m.textContent=e.message; }
@@ -435,7 +437,7 @@ async function delGen(path){
   if(!confirm('¿Eliminar este collage de la galería?')) return;
   try{
     await fetch('/api/delete_generated',{method:'POST',
-      headers:{'Content-Type':'application/json'}, body:JSON.stringify({image_path:path})});
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(srcBody(path))});
   }catch(e){}
   loadGallery();
 }
@@ -528,7 +530,7 @@ async function confirmSched(){
   if(epoch < Math.floor(Date.now()/1000)){ $('schedErr2').innerHTML='<div class="err">Esa hora ya pasó</div>'; return; }
   try{
     const r=await fetch('/api/schedule',{method:'POST',
-      headers:{'Content-Type':'application/json'}, body:JSON.stringify({image_path:schedPath, publish_at:epoch})});
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({...srcBody(schedPath), publish_at:epoch})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Error');
     closeSched(); loadScheduled(); loadGallery();
   }catch(e){ $('schedErr2').innerHTML=`<div class="err">${e.message}</div>`; }
