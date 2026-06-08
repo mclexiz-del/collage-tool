@@ -3,235 +3,236 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Collage Tool · Instagram</title>
+<title>Collage Tool · Stories</title>
 <style>
   :root { --bg:#0f0f12; --card:#1a1a20; --line:#2a2a33; --txt:#f2f2f5;
           --muted:#9a9aa5; --accent:#e31c3c; --ok:#2ecc71; }
   * { box-sizing:border-box; }
   body { margin:0; font-family:-apple-system,Segoe UI,Roboto,sans-serif;
          background:var(--bg); color:var(--txt); }
-  header { padding:22px 28px; border-bottom:1px solid var(--line);
+  header { padding:20px 26px; border-bottom:1px solid var(--line);
            display:flex; align-items:center; gap:12px; }
-  header h1 { font-size:20px; margin:0; }
+  header h1 { font-size:19px; margin:0; }
   header span { color:var(--muted); font-size:13px; }
-  .wrap { max-width:1100px; margin:0 auto; padding:26px; }
+  .wrap { max-width:1080px; margin:0 auto; padding:24px; }
   .row { display:flex; gap:22px; align-items:flex-start; flex-wrap:wrap; }
   .col { flex:1; min-width:320px; }
   .card { background:var(--card); border:1px solid var(--line);
           border-radius:16px; padding:20px; margin-bottom:18px; }
-  label { display:block; font-size:13px; color:var(--muted);
-          margin:14px 0 6px; }
-  input, textarea { width:100%; background:#101015; border:1px solid var(--line);
-          color:var(--txt); border-radius:10px; padding:12px 14px; font-size:15px; }
-  .linkbar { display:flex; gap:10px; }
-  .linkbar input { flex:1; }
-  button { background:var(--accent); color:#fff; border:0; border-radius:10px;
-          padding:12px 20px; font-size:15px; font-weight:600; cursor:pointer;
-          white-space:nowrap; }
-  button:disabled { opacity:.5; cursor:default; }
-  button.ghost { background:#26262e; }
-  .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:6px; }
-  .thumb { position:relative; border-radius:10px; overflow:hidden; cursor:pointer;
-           aspect-ratio:1; border:3px solid transparent; }
-  .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-  .thumb.sel { border-color:var(--accent); }
-  .thumb .num { position:absolute; top:6px; left:6px; background:var(--accent);
-           color:#fff; width:24px; height:24px; border-radius:50%; display:none;
-           align-items:center; justify-content:center; font-size:13px; font-weight:700; }
-  .thumb.sel .num { display:flex; }
+  .card h2 { font-size:15px; margin:0 0 4px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:14px 0 6px; }
+  input { width:100%; background:#101015; border:1px solid var(--line);
+          color:var(--txt); border-radius:10px; padding:13px 14px; font-size:16px; }
+  .two { display:flex; gap:12px; }
+  .two > div { flex:1; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:12px;
+          padding:16px 20px; font-size:17px; font-weight:700; cursor:pointer;
+          width:100%; }
+  button:disabled { opacity:.55; cursor:default; }
+  .picked { display:flex; gap:8px; margin-top:10px; min-height:8px; }
+  .picked img { width:64px; height:64px; object-fit:cover; border-radius:8px;
+          border:1px solid var(--line); }
   .hint { color:var(--muted); font-size:12.5px; margin-top:8px; }
-  .preview { background:#000; border-radius:14px; overflow:hidden;
-             display:flex; align-items:center; justify-content:center;
-             aspect-ratio:9/16; max-height:70vh; margin:0 auto; }
-  .preview img { width:100%; height:100%; object-fit:contain; }
-  .preview .empty { color:var(--muted); font-size:14px; text-align:center; padding:30px; }
-  .err { background:#3a1620; border:1px solid #5a1e2c; color:#ff8aa0;
-         padding:10px 14px; border-radius:10px; font-size:14px; margin-top:12px; }
-  .spin { display:inline-block; width:16px; height:16px; border:2px solid #fff5;
-          border-top-color:#fff; border-radius:50%; animation:s .7s linear infinite;
-          vertical-align:-3px; margin-right:8px; }
-  @keyframes s { to { transform:rotate(360deg); } }
-  .actions { display:flex; gap:10px; margin-top:14px; }
-  .actions a { flex:1; text-align:center; text-decoration:none; }
   .tpls { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:6px; }
-  .tpl { display:flex; align-items:center; gap:10px; padding:12px 14px;
+  .tpl { display:flex; align-items:center; gap:10px; padding:13px 14px;
          background:#101015; border:2px solid var(--line); border-radius:10px;
          cursor:pointer; font-size:15px; user-select:none; }
   .tpl.sel { border-color:var(--accent); }
   .tpl .sw { width:22px; height:22px; border-radius:6px; display:inline-block; }
+  .preview { background:#000; border-radius:14px; overflow:hidden;
+             display:flex; align-items:center; justify-content:center;
+             aspect-ratio:9/16; max-height:74vh; margin:0 auto; }
+  .preview img { width:100%; height:100%; object-fit:contain; }
+  .preview .empty { color:var(--muted); font-size:14px; text-align:center; padding:30px; }
+  .err { background:#3a1620; border:1px solid #5a1e2c; color:#ff8aa0;
+         padding:10px 14px; border-radius:10px; font-size:14px; margin-top:12px; }
+  .status { font-size:13px; color:var(--muted); margin-top:10px; min-height:18px; }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid #fff5;
+          border-top-color:#fff; border-radius:50%; animation:s .7s linear infinite;
+          vertical-align:-2px; margin-right:7px; }
+  @keyframes s { to { transform:rotate(360deg); } }
+  .dlbtn { background:#26262e; margin-top:12px; display:block; text-align:center;
+           text-decoration:none; color:#fff; border-radius:12px; padding:16px;
+           font-weight:700; font-size:16px; }
   @media (max-width:720px){
-    .wrap { padding:14px; }
-    header { padding:16px; }
-    header span { display:none; }
-    button { padding:14px 18px; font-size:16px; }
-    .grid { grid-template-columns:repeat(3,1fr); }
+    .wrap { padding:14px; } header { padding:16px; } header span { display:none; }
   }
 </style>
 </head>
 <body>
 <header>
   <h1>🛍️ Collage Tool</h1>
-  <span>Genera collages de productos para Instagram · sin costo de OpenAI</span>
+  <span>Collages para Stories · automático</span>
 </header>
 
 <div class="wrap">
-  <div class="card">
-    <label>Link del producto (gymshark u otra tienda)</label>
-    <div class="linkbar">
-      <input id="url" placeholder="https://www.gymshark.com/products/..." />
-      <button id="btnScrape" onclick="doScrape()">Traer fotos</button>
-    </div>
-    <div class="hint">Pega el link y se descargan fotos, precio y tallas automáticamente. Luego puedes editarlos.</div>
-    <div id="scrapeErr"></div>
-  </div>
-
   <div class="row">
     <div class="col">
+
       <div class="card">
-        <strong>1 · Elige hasta 4 fotos</strong>
-        <div id="grid" class="grid"></div>
-        <div class="hint" id="gridHint">Aún no hay fotos. Trae un link arriba.</div>
+        <h2>1 · Pega el link del producto</h2>
+        <input id="url" placeholder="https://www.gymshark.com/products/..." />
+        <div class="picked" id="picked"></div>
+        <div class="status" id="status"></div>
       </div>
 
       <div class="card">
-        <strong>2 · Datos del collage</strong>
-        <label>Título del producto</label>
-        <input id="title" placeholder="Nombre del producto" />
-        <label>Precio</label>
-        <input id="price" placeholder="$899" />
-        <label>Tallas disponibles (separadas por coma)</label>
+        <h2>2 · Tallas</h2>
+        <div class="hint">Se llenan solas. Edítalas si quieres (separadas por coma).</div>
         <input id="sizes" placeholder="S, M, L, XL" />
-        <label>Texto del badge</label>
-        <input id="layaway" value="Apartado a 15 días" />
-        <label>Marca / tienda (esquina)</label>
-        <input id="store" placeholder="gymshark" />
+      </div>
 
-        <label>Plantilla / estilo</label>
+      <div class="card">
+        <h2>3 · Estilo</h2>
         <div id="templates" class="tpls">
-          <div class="tpl sel" data-tpl="dark"><span class="sw" style="background:#111"></span>Oscuro</div>
+          <div class="tpl" data-tpl="dark"><span class="sw" style="background:#111"></span>Oscuro</div>
           <div class="tpl" data-tpl="light"><span class="sw" style="background:#f4f4f6;border:1px solid #444"></span>Claro</div>
           <div class="tpl" data-tpl="bold"><span class="sw" style="background:#000"></span><i style="color:#d7ff00">Bold</i></div>
-          <div class="tpl" data-tpl="boutique"><span class="sw" style="background:#f4eee4;border:1px solid #b07c5c"></span>Boutique</div>
+          <div class="tpl sel" data-tpl="boutique"><span class="sw" style="background:#f4eee4;border:1px solid #b07c5c"></span>Boutique</div>
         </div>
-
-        <div style="margin-top:18px">
-          <button id="btnGen" onclick="doCollage()">✨ Generar collage</button>
-        </div>
-        <div id="genErr"></div>
       </div>
+
+      <div class="card">
+        <h2>4 · Precio y apartado <span style="font-weight:400;color:var(--muted);font-size:12px">(se guarda)</span></h2>
+        <div class="two">
+          <div>
+            <label>Tipo de cambio (MXN x USD)</label>
+            <input id="rate" type="number" value="20" />
+          </div>
+          <div>
+            <label>Apartado / aumento (MXN)</label>
+            <input id="markup" type="number" value="300" />
+          </div>
+        </div>
+        <label>Precio final (automático, editable)</label>
+        <input id="price" placeholder="$700 MXN" />
+        <label>Texto del badge de apartado</label>
+        <input id="layaway" />
+        <label>Marca / tienda (esquina)</label>
+        <input id="store" placeholder="gymshark" />
+      </div>
+
+      <button id="btnGen" onclick="generar()">✨ Generar collage</button>
+      <div id="genErr"></div>
     </div>
 
     <div class="col">
       <div class="card">
-        <strong>Vista previa · Story (1080×1920)</strong>
+        <h2>Vista previa · Story (1080×1920)</h2>
         <div class="preview" id="preview" style="margin-top:12px">
-          <div class="empty">El collage aparecerá aquí.<br>Listo para Instagram.</div>
+          <div class="empty">Pega un link y toca<br><b>Generar collage</b>.</div>
         </div>
-        <div class="actions" id="actions" style="display:none">
-          <a id="dlLink" download="collage.png"><button class="ghost" style="width:100%">⬇️ Descargar PNG</button></a>
-        </div>
+        <a id="dlLink" class="dlbtn" download="collage.png" style="display:none">⬇️ Descargar PNG</a>
       </div>
     </div>
   </div>
 </div>
 
 <script>
-let selected = [];   // urls (full src) en orden de seleccion
-let template = 'dark';
+let images = [];        // urls de las mejores fotos (auto)
+let productTitle = '';  // nombre del producto (auto)
+let priceUSD = null;    // precio numerico en USD
+let lastUrl = '';       // ultimo link consultado
+let template = localStorage.getItem('tpl') || 'boutique';
+let priceManual = false, badgeManual = false, storeManual = false;
+
+// ---- restaurar ajustes guardados ----
+function $(id){ return document.getElementById(id); }
+$('rate').value = localStorage.getItem('rate') || '20';
+$('markup').value = localStorage.getItem('markup') || '300';
+applyTemplateUI();
 
 document.querySelectorAll('.tpl').forEach(el => {
-  el.onclick = () => {
-    document.querySelectorAll('.tpl').forEach(t => t.classList.remove('sel'));
-    el.classList.add('sel');
-    template = el.dataset.tpl;
-  };
+  el.onclick = () => { template = el.dataset.tpl; localStorage.setItem('tpl', template); applyTemplateUI(); };
+});
+function applyTemplateUI(){
+  document.querySelectorAll('.tpl').forEach(t =>
+    t.classList.toggle('sel', t.dataset.tpl === template));
+}
+
+$('rate').oninput   = () => { localStorage.setItem('rate', $('rate').value); recalcPrice(); };
+$('markup').oninput = () => { localStorage.setItem('markup', $('markup').value); recalcPrice(); recalcBadge(); };
+$('price').oninput  = () => { priceManual = true; };
+$('layaway').oninput= () => { badgeManual = true; };
+$('store').oninput  = () => { storeManual = true; };
+
+function rate(){ return parseFloat($('rate').value) || 0; }
+function markup(){ return parseFloat($('markup').value) || 0; }
+
+function recalcPrice(){
+  if(priceUSD == null || priceManual) return;
+  const mxn = Math.round(priceUSD * rate()) + markup();
+  $('price').value = '$' + mxn.toLocaleString('es-MX') + ' MXN';
+}
+function recalcBadge(){
+  if(badgeManual) return;
+  $('layaway').value = 'Aparta con $' + markup().toLocaleString('es-MX') + ' MXN a 15 días';
+}
+recalcBadge();
+
+function setErr(msg){ $('genErr').innerHTML = msg ? `<div class="err">${msg}</div>` : ''; }
+function setStatus(msg){ $('status').innerHTML = msg; }
+
+async function fetchData(url){
+  setStatus('<span class="spin"></span>Buscando fotos, precio y tallas...');
+  const r = await fetch('/api/scrape', {method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify({url})});
+  const d = await r.json();
+  if(!r.ok) throw new Error(d.error || 'No pude leer ese link');
+
+  // mejores fotos automaticamente (las primeras, que son las principales)
+  images = (d.images || []).slice(0,4).map(i => i.src);
+  $('picked').innerHTML = (d.images || []).slice(0,4)
+    .map(i => `<img src="${i.thumb}">`).join('');
+
+  productTitle = d.title || '';
+  if(!storeManual) $('store').value = d.store || '';
+  if(d.sizes && d.sizes.length) $('sizes').value = d.sizes.join(', ');
+  priceUSD = (d.price_value != null) ? d.price_value : null;
+  priceManual = false;
+  recalcPrice();
+  recalcBadge();
+  lastUrl = url;
+  setStatus(images.length ? `✓ ${images.length} fotos listas` : '⚠️ No se hallaron fotos');
+}
+
+// al salir del campo de link, ya trae todo (para que solo edites tallas)
+$('url').addEventListener('change', async () => {
+  const url = $('url').value.trim();
+  if(!url || url === lastUrl) return;
+  try { await fetchData(url); } catch(e){ setStatus(''); setErr(e.message); }
 });
 
-function setErr(id, msg){
-  document.getElementById(id).innerHTML = msg ? `<div class="err">${msg}</div>` : "";
-}
+async function generar(){
+  setErr('');
+  let url = $('url').value.trim();
+  if(!url){ setErr('Pega el link del producto.'); return; }
+  if(!url.startsWith('http')) url = 'https://' + url;
 
-async function doScrape(){
-  const url = document.getElementById('url').value.trim();
-  if(!url){ setErr('scrapeErr','Pega un link primero.'); return; }
-  const btn = document.getElementById('btnScrape');
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Buscando...';
-  setErr('scrapeErr','');
-  try{
-    const r = await fetch('/api/scrape', {method:'POST',
-      headers:{'Content-Type':'application/json'}, body:JSON.stringify({url})});
-    const d = await r.json();
-    if(!r.ok){ throw new Error(d.error || 'Error'); }
-    document.getElementById('title').value = d.title || '';
-    document.getElementById('price').value = d.price || '';
-    document.getElementById('sizes').value = (d.sizes||[]).join(', ');
-    document.getElementById('store').value = d.store || '';
-    renderThumbs(d.images || []);
-  }catch(e){ setErr('scrapeErr', e.message); }
-  btn.disabled = false; btn.textContent = 'Traer fotos';
-}
-
-function renderThumbs(images){
-  selected = [];
-  const grid = document.getElementById('grid');
-  grid.innerHTML = '';
-  if(!images.length){
-    document.getElementById('gridHint').textContent =
-      'No se encontraron fotos en ese link. Prueba otro o revisa la URL.';
-    return;
-  }
-  document.getElementById('gridHint').textContent =
-    'Toca las fotos en el orden que quieras (máx 4).';
-  images.forEach(it => {
-    const div = document.createElement('div');
-    div.className = 'thumb';
-    div.innerHTML = `<div class="num"></div><img src="${it.thumb}">`;
-    div.onclick = () => toggle(div, it.src);
-    grid.appendChild(div);
-  });
-}
-
-function toggle(div, src){
-  div.dataset.src = src;
-  const i = selected.indexOf(src);
-  if(i >= 0){ selected.splice(i,1); div.classList.remove('sel'); }
-  else {
-    if(selected.length >= 4) return;
-    selected.push(src); div.classList.add('sel');
-  }
-  const thumbs = [...document.querySelectorAll('.thumb')];
-  thumbs.forEach(t => t.querySelector('.num').textContent = '');
-  selected.forEach((s, idx) => {
-    const t = thumbs.find(x => x.dataset.src === s);
-    if(t) t.querySelector('.num').textContent = idx + 1;
-  });
-}
-
-async function doCollage(){
-  if(!selected.length){ setErr('genErr','Selecciona al menos una foto.'); return; }
-  const btn = document.getElementById('btnGen');
+  const btn = $('btnGen');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Generando...';
-  setErr('genErr','');
-  const body = {
-    images: selected,
-    title: document.getElementById('title').value,
-    price: document.getElementById('price').value,
-    sizes: document.getElementById('sizes').value.split(',').map(s=>s.trim()).filter(Boolean),
-    layaway: document.getElementById('layaway').value,
-    store: document.getElementById('store').value,
-    template: template,
-  };
   try{
+    if(url !== lastUrl || images.length === 0) await fetchData(url);
+    if(images.length === 0) throw new Error('Ese link no dio fotos. Prueba otro.');
+
+    const body = {
+      images,
+      title: productTitle,
+      price: $('price').value,
+      sizes: $('sizes').value.split(',').map(s=>s.trim()).filter(Boolean),
+      layaway: $('layaway').value,
+      store: $('store').value,
+      template,
+    };
     const r = await fetch('/api/collage', {method:'POST',
       headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
     const d = await r.json();
-    if(!r.ok) throw new Error(d.error || 'Error');
-    document.getElementById('preview').innerHTML = `<img src="${d.image}">`;
-    const dl = document.getElementById('dlLink');
-    dl.href = d.image;
-    dl.download = d.name || 'collage.png';
-    document.getElementById('actions').style.display = 'flex';
-  }catch(e){ setErr('genErr', e.message); }
+    if(!r.ok) throw new Error(d.error || 'Error generando');
+    $('preview').innerHTML = `<img src="${d.image}">`;
+    const dl = $('dlLink');
+    dl.href = d.image; dl.download = d.name || 'collage.png';
+    dl.style.display = 'block';
+  }catch(e){ setErr(e.message); }
   btn.disabled = false; btn.textContent = '✨ Generar collage';
 }
 </script>

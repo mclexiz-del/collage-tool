@@ -37,7 +37,7 @@ TEMPLATES = {
     "dark": {
         "label": "Oscuro",
         "bg": (17, 17, 17), "outer": 0, "gap": 10, "radius": 0,
-        "header": "bar", "header_h": 150, "panel": "bar", "panel_h": 340,
+        "header": "bar", "header_h": 150, "panel": "bar", "panel_h": 370,
         "panel_bg": (17, 17, 17), "text": (255, 255, 255), "sub": (170, 170, 170),
         "chip_bg": (255, 255, 255), "chip_text": (17, 17, 17),
         "accent": (227, 28, 60), "badge_text": (255, 255, 255),
@@ -46,7 +46,7 @@ TEMPLATES = {
     "light": {
         "label": "Claro",
         "bg": (244, 244, 246), "outer": 46, "gap": 20, "radius": 26,
-        "header": "float", "header_h": 130, "panel": "card", "panel_h": 360,
+        "header": "float", "header_h": 130, "panel": "card", "panel_h": 450,
         "panel_bg": (255, 255, 255), "text": (20, 20, 20), "sub": (130, 130, 130),
         "chip_bg": (20, 20, 20), "chip_text": (255, 255, 255),
         "accent": (20, 20, 20), "badge_text": (255, 255, 255),
@@ -55,7 +55,7 @@ TEMPLATES = {
     "bold": {
         "label": "Bold",
         "bg": (0, 0, 0), "outer": 0, "gap": 6, "radius": 0,
-        "header": "float", "header_h": 130, "panel": "bar", "panel_h": 370,
+        "header": "float", "header_h": 130, "panel": "bar", "panel_h": 390,
         "panel_bg": (0, 0, 0), "text": (255, 255, 255), "sub": (150, 150, 150),
         "chip_bg": (215, 255, 0), "chip_text": (0, 0, 0),
         "accent": (215, 255, 0), "badge_text": (0, 0, 0),
@@ -64,7 +64,7 @@ TEMPLATES = {
     "boutique": {
         "label": "Boutique",
         "bg": (244, 238, 228), "outer": 50, "gap": 18, "radius": 18,
-        "header": "float", "header_h": 130, "panel": "card", "panel_h": 360,
+        "header": "float", "header_h": 130, "panel": "card", "panel_h": 450,
         "panel_bg": (255, 255, 255), "text": (45, 36, 30), "sub": (150, 132, 116),
         "chip_bg": (45, 36, 30), "chip_text": (244, 238, 228),
         "accent": (176, 124, 92), "badge_text": (255, 255, 255),
@@ -168,27 +168,48 @@ def build_collage(images, price="", sizes=None, title="",
 
     draw = ImageDraw.Draw(canvas, "RGBA")
 
-    # --- HEADER (marca + badge apartado) ---
-    bfont = _font(38, bold=True)
-    sfont = _font(40, bold=True)
-    if cfg["header"] == "bar":
+    # --- HEADER (marca + badge apartado), ajustado para que NO se empalmen ---
+    bar = cfg["header"] == "bar"
+    hx0 = 48 if bar else outer + 26
+    hx1 = (W - 48) if bar else (W - outer - 26)
+    pill_h = 78 if bar else 68
+    store_txt = store.upper() if store else ""
+    badge_txt = layaway.upper() if layaway else ""
+
+    if bar:
         draw.rectangle([0, 0, W, cfg["header_h"]], fill=cfg["panel_bg"])
-        if store:
-            draw.text((48, 52), store.upper(), font=sfont, fill=cfg["store_text"])
-        if layaway:
-            txt = layaway.upper()
-            pw = int(draw.textlength(txt, font=bfont)) + 56
-            _pill(draw, W - 48 - pw, 36, txt, bfont, cfg["accent"], cfg["badge_text"], h=78)
-    else:  # float: pills sobre la foto
-        ty = outer + 26
-        if store:
-            _pill(draw, outer + 26, ty, store.upper(), sfont,
-                  cfg["bg"], cfg["store_text"], h=72)
-        if layaway:
-            txt = layaway.upper()
-            pw = int(draw.textlength(txt, font=bfont)) + 56
-            _pill(draw, W - outer - 26 - pw, ty, txt, bfont,
-                  cfg["accent"], cfg["badge_text"], h=72)
+        hy = (cfg["header_h"] - pill_h) // 2
+    else:
+        hy = outer + 24
+
+    # ancho que ocupa la marca (texto suelto o pill)
+    sfont = _font(36, bold=True)
+    store_w = int(draw.textlength(store_txt, font=sfont)) if store_txt else 0
+    if not bar and store_txt:
+        store_w += 56  # padding del pill
+
+    # elegir tamaño del badge para que quepa en el espacio restante
+    avail_badge = (hx1 - hx0) - store_w - 24
+    bsize = 36
+    while bsize >= 20:
+        bf = _font(bsize, bold=True)
+        if int(draw.textlength(badge_txt, font=bf)) + 56 <= avail_badge:
+            break
+        bsize -= 2
+    bfont = _font(bsize, bold=True)
+
+    if store_txt:
+        if bar:
+            sb = draw.textbbox((0, 0), store_txt, font=sfont)
+            draw.text((hx0, hy + (pill_h - (sb[3] - sb[1])) // 2 - sb[1]),
+                      store_txt, font=sfont, fill=cfg["store_text"])
+        else:
+            _pill(draw, hx0, hy, store_txt, sfont, cfg["bg"],
+                  cfg["store_text"], h=pill_h)
+    if badge_txt:
+        bw = int(draw.textlength(badge_txt, font=bfont)) + 56
+        _pill(draw, hx1 - bw, hy, badge_txt, bfont, cfg["accent"],
+              cfg["badge_text"], h=pill_h)
 
     # --- PANEL inferior (titulo + precio + tallas) ---
     if cfg["panel"] == "bar":
@@ -201,25 +222,34 @@ def build_collage(images, price="", sizes=None, title="",
         pmargin = 44
 
     cx = px0 + pmargin
-    cy = py0 + (40 if cfg["panel"] == "bar" else 38)
+    cy = py0 + 36
+    panel_right = px1 - pmargin
 
     if title:
         t = title if len(title) <= 38 else title[:35] + "..."
-        draw.text((cx, cy), t.upper(), font=_font(38, bold=True), fill=cfg["sub"])
-        cy += 52
+        draw.text((cx, cy), t.upper(), font=_font(36, bold=True), fill=cfg["sub"])
+        cy += 50
 
     if price:
-        draw.text((cx, cy), price, font=_font(116, bold=True), fill=cfg["text"])
-        cy += 150
+        # encoger el precio si fuera muy ancho
+        psize = 112
+        while psize >= 60:
+            pf = _font(psize, bold=True)
+            if int(draw.textlength(price, font=pf)) <= (panel_right - cx):
+                break
+            psize -= 4
+        pf = _font(psize, bold=True)
+        draw.text((cx, cy), price, font=pf, fill=cfg["text"])
+        cy += psize + 24
 
     if sizes:
         sizes = [str(s).strip() for s in sizes if str(s).strip()][:10]
         draw.text((cx, cy), "TALLAS DISPONIBLES", font=_font(28, bold=False),
                   fill=cfg["sub"])
         cy += 44
-        usable = (px1 - pmargin) - cx
+        usable = panel_right - cx
         fsize, pad, gap = 40, 22, 14
-        while fsize >= 24:
+        while fsize >= 22:
             cf = _font(fsize, bold=True)
             total = sum(int(draw.textlength(s, font=cf)) + pad * 2 for s in sizes)
             total += gap * (len(sizes) - 1)
@@ -229,7 +259,11 @@ def build_collage(images, price="", sizes=None, title="",
             pad = max(12, pad - 1)
             gap = max(8, gap - 1)
         cfont = _font(fsize, bold=True)
-        chip_h = fsize + 30
+        chip_h = fsize + 26
+        # asegurar que los chips no se salgan del panel por abajo
+        max_cy = py1 - chip_h - 22
+        if cy > max_cy:
+            cy = max_cy
         sx = cx
         for s in sizes:
             tw = int(draw.textlength(s, font=cfont))

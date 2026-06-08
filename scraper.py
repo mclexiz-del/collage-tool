@@ -41,6 +41,13 @@ def fetch(url, referer=None):
 CURRENCY_SYMBOLS = {"USD": "$", "MXN": "$", "EUR": "€", "GBP": "£"}
 
 
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _fmt_price(num, currency_code="USD"):
     if num is None:
         return ""
@@ -126,6 +133,8 @@ def scrape_nextdata(url):
         "images": images,
         "sizes": sizes,
         "price": _fmt_price(price_num, currency),
+        "price_value": _to_float(price_num),
+        "currency": currency,
         "source": "nextdata",
     }
 
@@ -186,6 +195,8 @@ def scrape_shopify(url):
         "images": images,
         "sizes": sizes,
         "price": _fmt_price(price_num, currency),
+        "price_value": _to_float(price_num),
+        "currency": currency,
         "source": "shopify",
     }
 
@@ -256,6 +267,8 @@ def scrape_generic(url):
         "images": uniq,
         "sizes": sizes,
         "price": _fmt_price(price_num, currency) if price_num else "",
+        "price_value": _to_float(price_num),
+        "currency": currency,
         "source": "generic",
     }
 

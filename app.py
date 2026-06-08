@@ -56,6 +56,8 @@ def api_scrape():
     return jsonify({
         "title": data.get("title", ""),
         "price": data.get("price", ""),
+        "price_value": data.get("price_value"),
+        "currency": data.get("currency", "USD"),
         "sizes": data.get("sizes", []),
         "store": store,
         "images": thumbs,
