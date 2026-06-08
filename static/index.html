@@ -542,7 +542,7 @@ function loadScheduled(){
       s.innerHTML = '<div class="hint">No hay nada programado.</div>'; return;
     }
     s.innerHTML = d.items.map(it=>`<div class="schitem">
-      <img src="${it.image_path}">
+      <img src="${it.image_url || it.image_path}">
       <div class="when">🕐 ${fmtTime(it.publish_at)}</div>
       <button onclick="cancelSched('${it.id}')">Cancelar</button>
     </div>`).join('');
