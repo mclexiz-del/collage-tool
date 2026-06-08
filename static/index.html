@@ -85,6 +85,26 @@
   .schitem .when { flex:1; font-size:14px; }
   .schitem button { width:auto; padding:8px 12px; font-size:13px; background:#3a1620; }
   .gmsg { font-size:12px; text-align:center; margin-top:4px; min-height:14px; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:50;
+           display:flex; align-items:center; justify-content:center; padding:16px; }
+  .modalbox { background:#16161c; border:1px solid var(--line); border-radius:18px;
+           padding:22px; width:100%; max-width:440px; max-height:90vh; overflow:auto; }
+  .msub { font-size:13px; color:var(--muted); margin:16px 0 8px; }
+  .chiprow { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip2 { padding:11px 14px; border-radius:10px; background:#101015;
+           border:2px solid var(--line); color:var(--txt); font-size:15px;
+           font-weight:600; cursor:pointer; user-select:none; min-width:54px;
+           text-align:center; }
+  .chip2.sel { border-color:var(--accent); background:#2a1620; color:#fff; }
+  .chip2 small { display:block; font-size:11px; color:var(--muted); font-weight:400; }
+  .chip2.sel small { color:#ffd0d8; }
+  .summary { margin:18px 0 4px; padding:12px 14px; background:#0b0b0f;
+           border:1px solid var(--line); border-radius:10px; font-size:15px;
+           text-align:center; font-weight:700; }
+  .modalbtns { display:flex; gap:10px; margin-top:14px; }
+  .modalbtns button { flex:1; }
+  .cancelbtn { background:#2a2a33; }
+  .okbtn { background:var(--ok); color:#06351a; }
   @media (max-width:720px){
     .wrap { padding:14px; } header { padding:16px; } header span { display:none; }
   }
@@ -179,6 +199,24 @@
     <h2>🕐 Publicaciones programadas</h2>
     <div class="hint">Se publican solas a la hora que elijas (el robot revisa cada 15 min).</div>
     <div id="scheduled"></div>
+  </div>
+</div>
+
+<div id="schedModal" class="modal" style="display:none">
+  <div class="modalbox">
+    <h3 style="margin:0 0 4px">🕐 Programar publicación</h3>
+    <div class="msub">Día</div>
+    <div id="dayChips" class="chiprow"></div>
+    <div class="msub">Hora</div>
+    <div id="hourChips" class="chiprow"></div>
+    <div class="msub">Minutos</div>
+    <div id="minChips" class="chiprow"></div>
+    <div id="schedSummary" class="summary">—</div>
+    <div id="schedErr2"></div>
+    <div class="modalbtns">
+      <button class="cancelbtn" onclick="closeSched()">Cancelar</button>
+      <button class="okbtn" onclick="confirmSched()">✓ Programar</button>
+    </div>
   </div>
 </div>
 
@@ -360,8 +398,7 @@ function loadGallery(){
         <img src="${it.path}" onclick="window.open('${it.path}','_blank')">
         <div class="ga">
           <button class="pub" onclick="pubNow('${it.path}','${k}')">📲 Publicar ahora</button>
-          <input type="datetime-local" id="dt_${k}" value="${defaultDT()}">
-          <button class="sch" onclick="doSchedule('${it.path}','dt_${k}','${k}')">🕐 Programar</button>
+          <button class="sch" onclick="openSched('${it.path}')">🕐 Programar</button>
           <div class="gmsg" id="msg_${k}">${it.scheduled?'🕐 ya programado':''}</div>
         </div>
       </div>`;
@@ -379,19 +416,74 @@ async function pubNow(path, k){
   }catch(e){ m.style.color='#ff8aa0'; m.textContent=e.message; }
 }
 
-async function doSchedule(path, inputId, k){
-  const m = $('msg_'+k);
-  const val = $(inputId).value;
-  if(!val){ m.style.color='#ff8aa0'; m.textContent='Elige fecha y hora'; return; }
-  const epoch = Math.floor(new Date(val).getTime()/1000);
-  m.style.color='var(--muted)'; m.textContent='Programando...';
+// ---- Selector visual de dia y hora (modal) ----
+const MX_DAYS = ['dom','lun','mar','mié','jue','vie','sáb'];
+let schedPath = null, schedDay = null, schedHour = null, schedMin = 0;
+
+function sameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+function dayAt(offset){ const n=new Date(); return new Date(n.getFullYear(),n.getMonth(),n.getDate()+offset); }
+function hourLabel(h){ const ap=h<12?'am':'pm'; let hh=h%12; if(hh===0) hh=12; return hh+ap; }
+function availableHours(day){
+  const now=new Date(), isToday=sameDay(day,now), arr=[];
+  for(let h=7;h<=23;h++){ if(isToday && h<=now.getHours()) continue; arr.push(h); }
+  return arr;
+}
+
+function openSched(path){
+  schedPath = path;
+  schedDay = dayAt(0);
+  let av = availableHours(schedDay);
+  if(av.length===0){ schedDay = dayAt(1); av = availableHours(schedDay); }
+  const next = new Date().getHours()+1;
+  schedHour = av.includes(next) ? next : av[0];
+  schedMin = 0;
+  $('schedErr2').innerHTML='';
+  renderDayChips(); renderHourChips(); renderMinChips(); updateSchedSummary();
+  $('schedModal').style.display='flex';
+}
+function closeSched(){ $('schedModal').style.display='none'; }
+
+function renderDayChips(){
+  let html='';
+  for(let i=0;i<7;i++){
+    const d=dayAt(i);
+    const top = i===0?'Hoy' : i===1?'Mañana' : MX_DAYS[d.getDay()];
+    html+=`<div class="chip2 ${sameDay(d,schedDay)?'sel':''}" onclick="pickDay(${i})">${top}<small>${d.getDate()}/${d.getMonth()+1}</small></div>`;
+  }
+  $('dayChips').innerHTML=html;
+}
+function pickDay(i){
+  schedDay=dayAt(i);
+  const av=availableHours(schedDay);
+  if(!av.includes(schedHour)) schedHour = av[0] ?? null;
+  renderDayChips(); renderHourChips(); updateSchedSummary();
+}
+function renderHourChips(){
+  const av=availableHours(schedDay);
+  if(!av.length){ $('hourChips').innerHTML='<div class="hint">No quedan horas hoy; elige otro día.</div>'; return; }
+  $('hourChips').innerHTML = av.map(h=>`<div class="chip2 ${h===schedHour?'sel':''}" onclick="pickHour(${h})">${hourLabel(h)}</div>`).join('');
+}
+function pickHour(h){ schedHour=h; renderHourChips(); updateSchedSummary(); }
+function renderMinChips(){
+  $('minChips').innerHTML=[0,15,30,45].map(m=>`<div class="chip2 ${m===schedMin?'sel':''}" onclick="pickMin(${m})">:${String(m).padStart(2,'0')}</div>`).join('');
+}
+function pickMin(m){ schedMin=m; renderMinChips(); updateSchedSummary(); }
+function schedDate(){ const d=new Date(schedDay); d.setHours(schedHour,schedMin,0,0); return d; }
+function updateSchedSummary(){
+  if(schedHour==null){ $('schedSummary').textContent='Elige una hora'; return; }
+  $('schedSummary').textContent = schedDate().toLocaleString('es-MX',
+    {weekday:'long',day:'2-digit',month:'long',hour:'2-digit',minute:'2-digit'});
+}
+async function confirmSched(){
+  if(schedHour==null){ $('schedErr2').innerHTML='<div class="err">Elige una hora</div>'; return; }
+  const epoch=Math.floor(schedDate().getTime()/1000);
+  if(epoch < Math.floor(Date.now()/1000)){ $('schedErr2').innerHTML='<div class="err">Esa hora ya pasó</div>'; return; }
   try{
-    const r = await fetch('/api/schedule',{method:'POST',
-      headers:{'Content-Type':'application/json'}, body:JSON.stringify({image_path:path, publish_at:epoch})});
-    const d = await r.json(); if(!r.ok) throw new Error(d.error||'Error');
-    m.style.color='var(--ok)'; m.textContent='✓ Programado';
-    loadScheduled();
-  }catch(e){ m.style.color='#ff8aa0'; m.textContent=e.message; }
+    const r=await fetch('/api/schedule',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({image_path:schedPath, publish_at:epoch})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Error');
+    closeSched(); loadScheduled(); loadGallery();
+  }catch(e){ $('schedErr2').innerHTML=`<div class="err">${e.message}</div>`; }
 }
 
 function loadScheduled(){
