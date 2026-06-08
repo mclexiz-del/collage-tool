@@ -146,8 +146,6 @@ def _pill(draw, x, y, text, font, bg, fg, pad=28, h=None):
 
 
 SOLD_OUT_RED = (210, 35, 45)
-COND_BLUE = (37, 99, 235)     # NUEVO
-COND_GREEN = (22, 150, 90)    # USADO
 
 
 def build_collage(images, price="", sizes=None, title="",
@@ -242,19 +240,26 @@ def build_collage(images, price="", sizes=None, title="",
     cy = py0 + 32
     panel_right = px1 - pmargin
 
-    # etiqueta de estado (NUEVO azul / USADO verde) antes del nombre
-    if condition:
-        is_new = str(condition).strip().lower().startswith("n")
-        ctxt = "NUEVO" if is_new else "USADO"
-        ccol = COND_BLUE if is_new else COND_GREEN
-        _pill(draw, cx, cy, ctxt, _font(26, bold=True), ccol, (255, 255, 255),
-              pad=22, h=50)
-        cy += 50 + 14
-
-    if title:
-        t = title if len(title) <= 38 else title[:35] + "..."
-        draw.text((cx, cy), t.upper(), font=_font(34, bold=True), fill=cfg["sub"])
-        cy += 48
+    # etiqueta de estado (NUEVO / USADO) EN LINEA antes del nombre, color de acento (cafe)
+    if condition or title:
+        line_h = 50
+        tx = cx
+        if condition:
+            ctxt = "NUEVO" if str(condition).strip().lower().startswith("n") else "USADO"
+            pw, _ = _pill(draw, cx, cy, ctxt, _font(26, bold=True),
+                          cfg["accent"], cfg["badge_text"], pad=20, h=line_h)
+            tx = cx + pw + 16
+        if title:
+            tfont = _font(32, bold=True)
+            t = title.upper()
+            if int(draw.textlength(t, font=tfont)) > (panel_right - tx):
+                while t and int(draw.textlength(t + "...", font=tfont)) > (panel_right - tx):
+                    t = t[:-1]
+                t = t.rstrip() + "..."
+            tb = draw.textbbox((0, 0), t, font=tfont)
+            draw.text((tx, cy + (line_h - (tb[3] - tb[1])) // 2 - tb[1]),
+                      t, font=tfont, fill=cfg["sub"])
+        cy += line_h + 12
 
     if price:
         psize = 108
