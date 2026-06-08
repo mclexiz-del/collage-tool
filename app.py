@@ -45,7 +45,8 @@ def _github_put_file(repo_path, data_bytes, message):
         r = creq.put(
             f"https://api.github.com/repos/{GH_REPO}/contents/{repo_path}",
             headers={"Authorization": f"Bearer {GH_TOKEN}",
-                     "Accept": "application/vnd.github+json"},
+                     "Accept": "application/vnd.github+json",
+                     "User-Agent": "collage-tool"},
             json={"message": message,
                   "content": base64.b64encode(data_bytes).decode(),
                   "branch": "main"}, timeout=60)
