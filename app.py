@@ -31,6 +31,30 @@ RENDER_KEY = os.environ.get("RENDER_API_KEY")
 RENDER_SRV = os.environ.get("RENDER_SERVICE_ID")
 RENDER_BASE = f"https://api.render.com/v1/services/{RENDER_SRV}" if RENDER_SRV else None
 
+# GitHub: almacen PERMANENTE para imagenes programadas (el disco de Render
+# es temporal y se borra al reiniciar/desplegar).
+GH_TOKEN = os.environ.get("GH_TOKEN")
+GH_REPO = os.environ.get("GH_REPO", "")
+
+
+def _github_put_file(repo_path, data_bytes, message):
+    """Sube un archivo al repo. Devuelve la URL raw publica o None."""
+    if not (GH_TOKEN and GH_REPO):
+        return None
+    try:
+        r = creq.put(
+            f"https://api.github.com/repos/{GH_REPO}/contents/{repo_path}",
+            headers={"Authorization": f"Bearer {GH_TOKEN}",
+                     "Accept": "application/vnd.github+json"},
+            json={"message": message,
+                  "content": base64.b64encode(data_bytes).decode(),
+                  "branch": "main"}, timeout=60)
+        if r.status_code in (200, 201):
+            return f"https://raw.githubusercontent.com/{GH_REPO}/main/{repo_path}"
+    except Exception:
+        return None
+    return None
+
 
 def _render_env_get(key):
     if not (RENDER_KEY and RENDER_BASE):
@@ -299,8 +323,24 @@ def api_schedule():
     if publish_at < int(time.time()) - 60:
         return jsonify({"error": "Esa hora ya paso. Elige una futura."}), 400
 
+    # Subir la imagen a GitHub (permanente) para que no se pierda si Render reinicia
+    fname = image_path.split("/")[-1]
+    local = os.path.join(GEN_DIR, fname)
+    if not os.path.exists(local):
+        return jsonify({"error": "Ese collage ya no esta disponible. Generalo de nuevo."}), 400
+
+    sid = uuid.uuid4().hex[:10]
+    image_url = None
+    if GH_TOKEN and GH_REPO:
+        with open(local, "rb") as fh:
+            image_url = _github_put_file(f"sched/{sid}.png", fh.read(),
+                                         f"programar {sid}")
+        if not image_url:
+            return jsonify({"error": "No pude guardar la imagen para programar. Intenta de nuevo."}), 500
+
     items = _get_schedule()
-    items.append({"id": uuid.uuid4().hex[:10], "image_path": image_path,
+    items.append({"id": sid, "image_path": image_path, "image_url": image_url,
+                  "repo_path": f"sched/{sid}.png" if image_url else None,
                   "publish_at": publish_at, "attempts": 0})
     if not _set_schedule(items):
         return jsonify({"error": "No pude guardar la programacion."}), 500

@@ -18,7 +18,31 @@ GRAPH = "https://graph.instagram.com/v21.0"
 RENDER_KEY = os.environ["RENDER_API_KEY"]
 RENDER_SRV = os.environ["RENDER_SERVICE_ID"]
 RENDER_BASE = f"https://api.render.com/v1/services/{RENDER_SRV}"
+GH_TOKEN = os.environ.get("GH_TOKEN")
+GH_REPO = os.environ.get("GH_REPO", "")
 MAX_ATTEMPTS = 3
+
+
+def github_delete(repo_path):
+    """Borra la imagen del repo despues de publicarla (limpieza)."""
+    if not (GH_TOKEN and GH_REPO and repo_path):
+        return
+    base = f"https://api.github.com/repos/{GH_REPO}/contents/{repo_path}"
+    hdr = {"Authorization": f"Bearer {GH_TOKEN}",
+           "Accept": "application/vnd.github+json"}
+    try:
+        meta = _req(base, headers=hdr)
+        sha = meta.get("sha")
+        if not sha:
+            return
+        body = json.dumps({"message": f"limpiar {repo_path}", "sha": sha,
+                           "branch": "main"}).encode()
+        req = urllib.request.Request(base, data=body, method="DELETE", headers={
+            **hdr, "Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=60).read()
+        print(f"Imagen {repo_path} limpiada del repo.")
+    except Exception as e:
+        print(f"No pude limpiar {repo_path}: {e}")
 
 
 def _req(url, data=None, method="GET", headers=None):
@@ -103,8 +127,8 @@ def main():
 
     now = int(time.time())
     due = [it for it in schedule if it.get("publish_at", 0) <= now]
-    if due:
-        # despertar el servidor (Render gratis se duerme) usando la 1a imagen
+    # solo hace falta despertar Render si alguna imagen vive en Render (sin image_url)
+    if any(not it.get("image_url") for it in due):
         print("Despertando el servidor de Render...")
         warm_up(APP_BASE + due[0]["image_path"])
 
@@ -114,10 +138,12 @@ def main():
         if it.get("publish_at", 0) > now:
             remaining.append(it)               # aun no toca
             continue
-        url = APP_BASE + it["image_path"]
+        # imagen permanente (GitHub) si existe; si no, la de Render
+        url = it.get("image_url") or (APP_BASE + it["image_path"])
         try:
             pid = publish_story(token, ig_user, url)
             print(f"Publicada {it['id']} -> media {pid}")
+            github_delete(it.get("repo_path"))
             changed = True
         except Exception as e:
             it["attempts"] = it.get("attempts", 0) + 1

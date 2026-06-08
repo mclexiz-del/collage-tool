@@ -465,7 +465,8 @@ function renderHourChips(){
 }
 function pickHour(h){ schedHour=h; renderHourChips(); updateSchedSummary(); }
 function renderMinChips(){
-  $('minChips').innerHTML=[0,15,30,45].map(m=>`<div class="chip2 ${m===schedMin?'sel':''}" onclick="pickMin(${m})">:${String(m).padStart(2,'0')}</div>`).join('');
+  let mins=[]; for(let m=0;m<60;m+=3) mins.push(m);
+  $('minChips').innerHTML=mins.map(m=>`<div class="chip2 ${m===schedMin?'sel':''}" onclick="pickMin(${m})">:${String(m).padStart(2,'0')}</div>`).join('');
 }
 function pickMin(m){ schedMin=m; renderMinChips(); updateSchedSummary(); }
 function schedDate(){ const d=new Date(schedDay); d.setHours(schedHour,schedMin,0,0); return d; }
