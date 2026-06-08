@@ -277,9 +277,14 @@ $('store').oninput  = () => { storeManual = true; };
 function rate(){ return parseFloat($('rate').value) || 0; }
 function markup(){ return parseFloat($('markup').value) || 0; }
 
+// Redondea a multiplos de $50: si sobran 10 o menos baja, si sobran mas sube
+function roundTo50(n){
+  const r = ((n % 50) + 50) % 50;
+  return r <= 10 ? n - r : n + (50 - r);
+}
 function recalcPrice(){
   if(priceUSD == null || priceManual) return;
-  const mxn = Math.round(priceUSD * rate()) + markup();
+  const mxn = roundTo50(Math.round(priceUSD * rate()) + markup());
   $('price').value = '$' + mxn.toLocaleString('es-MX') + ' MXN';
 }
 function recalcBadge(){
