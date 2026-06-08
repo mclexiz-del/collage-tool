@@ -9,6 +9,7 @@ guardar la cola con las pendientes.
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -26,8 +27,29 @@ def _req(url, data=None, method="GET", headers=None):
     if data is not None:
         body = urllib.parse.urlencode(data).encode()
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read().decode())
+        except Exception:
+            raise RuntimeError(f"HTTP {e.code}")
+
+
+def warm_up(url, tries=15, wait=5):
+    """Despierta el servidor de Render (se duerme en el plan gratis) y
+    espera a que la imagen este accesible antes de publicar."""
+    for _ in range(tries):
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=30) as r:
+                if r.status == 200:
+                    return True
+        except Exception:
+            pass
+        time.sleep(wait)
+    return False
 
 
 def render_env():
@@ -80,7 +102,14 @@ def main():
         return
 
     now = int(time.time())
+    due = [it for it in schedule if it.get("publish_at", 0) <= now]
+    if due:
+        # despertar el servidor (Render gratis se duerme) usando la 1a imagen
+        print("Despertando el servidor de Render...")
+        warm_up(APP_BASE + due[0]["image_path"])
+
     remaining = []
+    changed = False
     for it in schedule:
         if it.get("publish_at", 0) > now:
             remaining.append(it)               # aun no toca
@@ -89,15 +118,18 @@ def main():
         try:
             pid = publish_story(token, ig_user, url)
             print(f"Publicada {it['id']} -> media {pid}")
+            changed = True
         except Exception as e:
             it["attempts"] = it.get("attempts", 0) + 1
             print(f"Fallo {it['id']} (intento {it['attempts']}): {e}")
             if it["attempts"] < MAX_ATTEMPTS:
                 remaining.append(it)            # reintentar luego
+                changed = True                  # persistir el contador de intentos
             else:
                 print(f"Descarto {it['id']} tras {MAX_ATTEMPTS} intentos.")
+                changed = True
 
-    if len(remaining) != len(schedule):
+    if changed:
         render_set("IG_SCHEDULE", json.dumps(remaining))
         print(f"Cola actualizada: quedan {len(remaining)}.")
     else:
