@@ -146,11 +146,13 @@ def _pill(draw, x, y, text, font, bg, fg, pad=28, h=None):
 
 
 SOLD_OUT_RED = (210, 35, 45)
+COND_BLUE = (37, 99, 235)     # NUEVO
+COND_GREEN = (22, 150, 90)    # USADO
 
 
 def build_collage(images, price="", sizes=None, title="",
                   layaway="Apartado a 15 dias", store="", template="dark",
-                  sold_out=None):
+                  sold_out=None, condition="nuevo"):
     cfg = TEMPLATES.get(template, TEMPLATES["dark"])
     sizes = [str(s).strip() for s in (sizes or []) if str(s).strip()][:10]
     sold_set = {str(s).strip().upper() for s in (sold_out or [])}
@@ -237,8 +239,17 @@ def build_collage(images, price="", sizes=None, title="",
         pmargin = 44
 
     cx = px0 + pmargin
-    cy = py0 + 34
+    cy = py0 + 32
     panel_right = px1 - pmargin
+
+    # etiqueta de estado (NUEVO azul / USADO verde) antes del nombre
+    if condition:
+        is_new = str(condition).strip().lower().startswith("n")
+        ctxt = "NUEVO" if is_new else "USADO"
+        ccol = COND_BLUE if is_new else COND_GREEN
+        _pill(draw, cx, cy, ctxt, _font(26, bold=True), ccol, (255, 255, 255),
+              pad=22, h=50)
+        cy += 50 + 14
 
     if title:
         t = title if len(title) <= 38 else title[:35] + "..."

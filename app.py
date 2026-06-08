@@ -93,6 +93,7 @@ def api_collage():
             layaway=body.get("layaway", "Apartado a 15 dias").strip(),
             store=body.get("store", "").strip(),
             template=body.get("template", "dark"),
+            condition=body.get("condition", "nuevo"),
         )
     except Exception as e:
         return jsonify({"error": f"Error armando el collage: {e}"}), 500

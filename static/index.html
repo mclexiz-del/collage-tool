@@ -47,6 +47,11 @@
   .sz.off { background:transparent; color:#7a7a85; border-color:#3a3a44;
         text-decoration:line-through; text-decoration-color:var(--accent);
         text-decoration-thickness:3px; }
+  .cond { flex:1; padding:14px 0; text-align:center; border-radius:10px;
+        background:#101015; color:var(--muted); border:2px solid var(--line);
+        font-weight:800; font-size:16px; cursor:pointer; user-select:none; }
+  .cond.sel[data-c="nuevo"] { background:#13315e; color:#cfe0ff; border-color:#2563eb; }
+  .cond.sel[data-c="usado"] { background:#103a26; color:#bfeed4; border-color:#16965a; }
   .preview { background:#000; border-radius:14px; overflow:hidden;
              display:flex; align-items:center; justify-content:center;
              aspect-ratio:9/16; max-height:74vh; margin:0 auto; }
@@ -85,13 +90,21 @@
       </div>
 
       <div class="card">
-        <h2>2 · Tallas disponibles</h2>
+        <h2>2 · Estado del producto</h2>
+        <div id="condBtns" class="sizebtns">
+          <div class="cond sel" data-c="nuevo">🔵 NUEVO</div>
+          <div class="cond" data-c="usado">🟢 USADO</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>3 · Tallas disponibles</h2>
         <div class="hint">Toca para marcar/desmarcar. Las desmarcadas salen <b>agotadas</b> (tachadas en rojo).</div>
         <div id="sizeBtns" class="sizebtns"></div>
       </div>
 
       <div class="card">
-        <h2>3 · Estilo</h2>
+        <h2>4 · Estilo</h2>
         <div id="templates" class="tpls">
           <div class="tpl" data-tpl="dark"><span class="sw" style="background:#111"></span>Oscuro</div>
           <div class="tpl" data-tpl="light"><span class="sw" style="background:#f4f4f6;border:1px solid #444"></span>Claro</div>
@@ -101,7 +114,7 @@
       </div>
 
       <div class="card">
-        <h2>4 · Precio y apartado <span style="font-weight:400;color:var(--muted);font-size:12px">(se guarda)</span></h2>
+        <h2>5 · Precio y apartado <span style="font-weight:400;color:var(--muted);font-size:12px">(se guarda)</span></h2>
         <div class="two">
           <div>
             <label>Tipo de cambio (MXN x USD)</label>
@@ -163,6 +176,17 @@ function renderSizes(){
   });
 }
 renderSizes();
+
+// ---- botones de estado (nuevo / usado) ----
+let condition = localStorage.getItem('cond') || 'nuevo';
+function applyCondUI(){
+  document.querySelectorAll('.cond').forEach(el =>
+    el.classList.toggle('sel', el.dataset.c === condition));
+}
+document.querySelectorAll('.cond').forEach(el => {
+  el.onclick = () => { condition = el.dataset.c; localStorage.setItem('cond', condition); applyCondUI(); };
+});
+applyCondUI();
 
 document.querySelectorAll('.tpl').forEach(el => {
   el.onclick = () => { template = el.dataset.tpl; localStorage.setItem('tpl', template); applyTemplateUI(); };
@@ -248,6 +272,7 @@ async function generar(){
       price: $('price').value,
       sizes: SIZES,                                  // siempre muestro las 5
       sold_out: SIZES.filter(s => !sizeOn[s]),       // las desmarcadas = agotadas
+      condition,
       layaway: $('layaway').value,
       store: $('store').value,
       template,
