@@ -102,8 +102,20 @@ def publish_story(token, ig_user, image_url):
                     "access_token": token})
     if "id" not in j1:
         raise RuntimeError(f"contenedor: {j1}")
+    cid = j1["id"]
+
+    # esperar a que Instagram termine de procesar el contenedor
+    for _ in range(20):
+        st = _req(f"{GRAPH}/{cid}?fields=status_code&access_token={token}")
+        code = st.get("status_code")
+        if code == "FINISHED":
+            break
+        if code in ("ERROR", "EXPIRED"):
+            raise RuntimeError(f"contenedor {code}: {st}")
+        time.sleep(3)
+
     j2 = _req(f"{GRAPH}/{ig_user}/media_publish", method="POST",
-              data={"creation_id": j1["id"], "access_token": token})
+              data={"creation_id": cid, "access_token": token})
     if "id" not in j2:
         raise RuntimeError(f"publish: {j2}")
     return j2["id"]
