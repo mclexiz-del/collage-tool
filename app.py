@@ -322,49 +322,86 @@ def ig_status():
         return jsonify({"configured": True, "username": ""})
 
 
+def _publish_story(token, ig_user, public_url):
+    """Crea el contenedor, espera a que este listo y publica la Historia."""
+    r1 = creq.post(f"{GRAPH}/{ig_user}/media",
+                   data={"image_url": public_url, "media_type": "STORIES",
+                         "access_token": token}, timeout=60)
+    j1 = r1.json()
+    if "id" not in j1:
+        raise RuntimeError(_ig_err("creando la historia", j1))
+    for _ in range(20):
+        st = creq.get(f"{GRAPH}/{j1['id']}",
+                      params={"fields": "status_code", "access_token": token},
+                      timeout=20).json()
+        if st.get("status_code") == "FINISHED":
+            break
+        if st.get("status_code") in ("ERROR", "EXPIRED"):
+            raise RuntimeError("Instagram no pudo procesar la imagen.")
+        time.sleep(2)
+    r2 = creq.post(f"{GRAPH}/{ig_user}/media_publish",
+                   data={"creation_id": j1["id"], "access_token": token}, timeout=60)
+    j2 = r2.json()
+    if "id" not in j2:
+        raise RuntimeError(_ig_err("publicando", j2))
+    return j2["id"]
+
+
 @app.post("/api/publish")
 def api_publish():
     """Publica el collage como Historia en la cuenta de Instagram configurada."""
     token = os.environ.get("IG_ACCESS_TOKEN")
     if not token:
         return jsonify({"error": "Falta configurar Instagram (token). Avisa para conectarlo."}), 400
-
-    body = request.json or {}
-    public_url = _src_public_url(body)
+    public_url = _src_public_url(request.json or {})
     if not public_url:
         return jsonify({"error": "Genera el collage primero."}), 400
-
     try:
         ig_user = _ig_user_id(token)
         if not ig_user:
-            return jsonify({"error": "No pude identificar tu cuenta de Instagram con ese token."}), 400
-        # 1) crear contenedor de Historia
-        r1 = creq.post(f"{GRAPH}/{ig_user}/media",
-                       data={"image_url": public_url, "media_type": "STORIES",
-                             "access_token": token}, timeout=60)
-        j1 = r1.json()
-        if "id" not in j1:
-            return jsonify({"error": _ig_err("creando la historia", j1)}), 400
-        # esperar a que el contenedor este listo
-        for _ in range(15):
-            st = creq.get(f"{GRAPH}/{j1['id']}",
-                          params={"fields": "status_code", "access_token": token},
-                          timeout=20).json()
-            if st.get("status_code") == "FINISHED":
-                break
-            if st.get("status_code") in ("ERROR", "EXPIRED"):
-                return jsonify({"error": "Instagram no pudo procesar la imagen."}), 400
-            time.sleep(2)
-        # 2) publicar
-        r2 = creq.post(f"{GRAPH}/{ig_user}/media_publish",
-                       data={"creation_id": j1["id"], "access_token": token}, timeout=60)
-        j2 = r2.json()
-        if "id" not in j2:
-            return jsonify({"error": _ig_err("publicando", j2)}), 400
+            return jsonify({"error": "No pude identificar tu cuenta de Instagram."}), 400
+        mid = _publish_story(token, ig_user, public_url)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": f"Error conectando con Instagram: {e}"}), 500
+    return jsonify({"ok": True, "id": mid})
 
-    return jsonify({"ok": True, "id": j2["id"]})
+
+import threading
+_run_lock = threading.Lock()
+
+
+@app.get("/api/run_due")
+def run_due():
+    """Publica las programadas cuya hora ya llego. Lo llama un cron cada minuto."""
+    if request.args.get("key", "") != os.environ.get("RUN_KEY", "publish"):
+        return jsonify({"error": "no autorizado"}), 403
+    if not _run_lock.acquire(blocking=False):
+        return jsonify({"busy": True})
+    try:
+        token = os.environ.get("IG_ACCESS_TOKEN")
+        ig_user = _ig_user_id(token) if token else None
+        if not (token and ig_user):
+            return jsonify({"error": "sin token"}), 400
+        now = int(time.time())
+        due = [it for it in _get_schedule() if it.get("publish_at", 0) <= now]
+        done = set()
+        for it in due:
+            url = it.get("image_url") or (f"https://{request.host}{it.get('image_path','')}")
+            try:
+                _publish_story(token, ig_user, url)
+                done.add(it["id"])
+            except Exception:
+                it["attempts"] = it.get("attempts", 0) + 1
+                if it["attempts"] >= 3:
+                    done.add(it["id"])  # descartar tras 3 intentos
+        if done:
+            remaining = [it for it in _get_schedule() if it["id"] not in done]
+            _set_schedule(remaining)
+        return jsonify({"published": len(done), "pending": len(_get_schedule())})
+    finally:
+        _run_lock.release()
 
 
 def _ig_err(ctx, payload):
