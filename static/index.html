@@ -39,6 +39,14 @@
          cursor:pointer; font-size:15px; user-select:none; }
   .tpl.sel { border-color:var(--accent); }
   .tpl .sw { width:22px; height:22px; border-radius:6px; display:inline-block; }
+  .sizebtns { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+  .sz { min-width:62px; padding:14px 0; text-align:center; border-radius:10px;
+        background:var(--ok); color:#062a14; border:2px solid var(--ok);
+        font-weight:800; font-size:17px; cursor:pointer; user-select:none;
+        position:relative; flex:1; }
+  .sz.off { background:transparent; color:#7a7a85; border-color:#3a3a44;
+        text-decoration:line-through; text-decoration-color:var(--accent);
+        text-decoration-thickness:3px; }
   .preview { background:#000; border-radius:14px; overflow:hidden;
              display:flex; align-items:center; justify-content:center;
              aspect-ratio:9/16; max-height:74vh; margin:0 auto; }
@@ -77,9 +85,9 @@
       </div>
 
       <div class="card">
-        <h2>2 · Tallas</h2>
-        <div class="hint">Se llenan solas. Edítalas si quieres (separadas por coma).</div>
-        <input id="sizes" placeholder="S, M, L, XL" />
+        <h2>2 · Tallas disponibles</h2>
+        <div class="hint">Toca para marcar/desmarcar. Las desmarcadas salen <b>agotadas</b> (tachadas en rojo).</div>
+        <div id="sizeBtns" class="sizebtns"></div>
       </div>
 
       <div class="card">
@@ -129,6 +137,10 @@
 </div>
 
 <script>
+const SIZES = ['XS','S','M','L','XL'];   // tallas que se venden
+let sizeOn = {};                          // {XS:true,...} true = disponible
+SIZES.forEach(s => sizeOn[s] = true);
+
 let images = [];        // urls de las mejores fotos (auto)
 let productTitle = '';  // nombre del producto (auto)
 let priceUSD = null;    // precio numerico en USD
@@ -141,6 +153,16 @@ function $(id){ return document.getElementById(id); }
 $('rate').value = localStorage.getItem('rate') || '20';
 $('markup').value = localStorage.getItem('markup') || '300';
 applyTemplateUI();
+
+// ---- botones de tallas ----
+function renderSizes(){
+  $('sizeBtns').innerHTML = SIZES.map(s =>
+    `<div class="sz ${sizeOn[s]?'':'off'}" data-s="${s}">${s}</div>`).join('');
+  document.querySelectorAll('.sz').forEach(el => {
+    el.onclick = () => { sizeOn[el.dataset.s] = !sizeOn[el.dataset.s]; renderSizes(); };
+  });
+}
+renderSizes();
 
 document.querySelectorAll('.tpl').forEach(el => {
   el.onclick = () => { template = el.dataset.tpl; localStorage.setItem('tpl', template); applyTemplateUI(); };
@@ -187,7 +209,12 @@ async function fetchData(url){
 
   productTitle = d.title || '';
   if(!storeManual) $('store').value = d.store || '';
-  if(d.sizes && d.sizes.length) $('sizes').value = d.sizes.join(', ');
+  // marcar disponibles segun stock del producto (solo entre las que vendo)
+  if(d.sizes && d.sizes.length){
+    const stock = d.sizes.map(s => String(s).toUpperCase());
+    SIZES.forEach(s => sizeOn[s] = stock.includes(s));
+    renderSizes();
+  }
   priceUSD = (d.price_value != null) ? d.price_value : null;
   priceManual = false;
   recalcPrice();
@@ -219,7 +246,8 @@ async function generar(){
       images,
       title: productTitle,
       price: $('price').value,
-      sizes: $('sizes').value.split(',').map(s=>s.trim()).filter(Boolean),
+      sizes: SIZES,                                  // siempre muestro las 5
+      sold_out: SIZES.filter(s => !sizeOn[s]),       // las desmarcadas = agotadas
       layaway: $('layaway').value,
       store: $('store').value,
       template,

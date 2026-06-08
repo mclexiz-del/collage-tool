@@ -82,11 +82,13 @@ def api_collage():
         return jsonify({"error": "No pude descargar las fotos seleccionadas"}), 400
 
     sizes = [s.strip() for s in body.get("sizes", []) if str(s).strip()]
+    sold_out = [s.strip() for s in body.get("sold_out", []) if str(s).strip()]
     try:
         out = collage.build_collage(
             images=imgs,
             price=body.get("price", "").strip(),
             sizes=sizes,
+            sold_out=sold_out,
             title=body.get("title", "").strip(),
             layaway=body.get("layaway", "Apartado a 15 dias").strip(),
             store=body.get("store", "").strip(),

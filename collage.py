@@ -46,11 +46,12 @@ TEMPLATES = {
     "light": {
         "label": "Claro",
         "bg": (244, 244, 246), "outer": 46, "gap": 20, "radius": 26,
-        "header": "float", "header_h": 130, "panel": "card", "panel_h": 450,
+        "header": "float", "header_h": 130, "panel": "card", "panel_h": 500,
         "panel_bg": (255, 255, 255), "text": (20, 20, 20), "sub": (130, 130, 130),
         "chip_bg": (20, 20, 20), "chip_text": (255, 255, 255),
         "accent": (20, 20, 20), "badge_text": (255, 255, 255),
         "store_text": (20, 20, 20),
+        "brand_right": True, "layaway_below_price": True,
     },
     "bold": {
         "label": "Bold",
@@ -64,11 +65,12 @@ TEMPLATES = {
     "boutique": {
         "label": "Boutique",
         "bg": (244, 238, 228), "outer": 50, "gap": 18, "radius": 18,
-        "header": "float", "header_h": 130, "panel": "card", "panel_h": 450,
+        "header": "float", "header_h": 130, "panel": "card", "panel_h": 500,
         "panel_bg": (255, 255, 255), "text": (45, 36, 30), "sub": (150, 132, 116),
         "chip_bg": (45, 36, 30), "chip_text": (244, 238, 228),
         "accent": (176, 124, 92), "badge_text": (255, 255, 255),
         "store_text": (45, 36, 30),
+        "brand_right": True, "layaway_below_price": True,
     },
 }
 
@@ -143,13 +145,21 @@ def _pill(draw, x, y, text, font, bg, fg, pad=28, h=None):
     return pw, ph
 
 
+SOLD_OUT_RED = (210, 35, 45)
+
+
 def build_collage(images, price="", sizes=None, title="",
-                  layaway="Apartado a 15 dias", store="", template="dark"):
+                  layaway="Apartado a 15 dias", store="", template="dark",
+                  sold_out=None):
     cfg = TEMPLATES.get(template, TEMPLATES["dark"])
-    sizes = sizes or []
+    sizes = [str(s).strip() for s in (sizes or []) if str(s).strip()][:10]
+    sold_set = {str(s).strip().upper() for s in (sold_out or [])}
     images = [im for im in images if im is not None][:4]
     if not images:
         raise ValueError("No hay imagenes para el collage")
+
+    brand_right = cfg.get("brand_right", False)
+    layaway_below = cfg.get("layaway_below_price", False)
 
     W, H = CANVAS_W, CANVAS_H
     outer = cfg["outer"]
@@ -168,13 +178,15 @@ def build_collage(images, price="", sizes=None, title="",
 
     draw = ImageDraw.Draw(canvas, "RGBA")
 
-    # --- HEADER (marca + badge apartado), ajustado para que NO se empalmen ---
+    # --- HEADER ---
     bar = cfg["header"] == "bar"
     hx0 = 48 if bar else outer + 26
     hx1 = (W - 48) if bar else (W - outer - 26)
     pill_h = 78 if bar else 68
     store_txt = store.upper() if store else ""
     badge_txt = layaway.upper() if layaway else ""
+    # si la marca va a la derecha, el apartado NO va en el header (va bajo el precio)
+    header_badge = "" if (brand_right or layaway_below) else badge_txt
 
     if bar:
         draw.rectangle([0, 0, W, cfg["header_h"]], fill=cfg["panel_bg"])
@@ -182,98 +194,122 @@ def build_collage(images, price="", sizes=None, title="",
     else:
         hy = outer + 24
 
-    # ancho que ocupa la marca (texto suelto o pill)
     sfont = _font(36, bold=True)
-    store_w = int(draw.textlength(store_txt, font=sfont)) if store_txt else 0
-    if not bar and store_txt:
-        store_w += 56  # padding del pill
 
-    # elegir tamaño del badge para que quepa en el espacio restante
-    avail_badge = (hx1 - hx0) - store_w - 24
-    bsize = 36
-    while bsize >= 20:
-        bf = _font(bsize, bold=True)
-        if int(draw.textlength(badge_txt, font=bf)) + 56 <= avail_badge:
-            break
-        bsize -= 2
-    bfont = _font(bsize, bold=True)
-
-    if store_txt:
-        if bar:
-            sb = draw.textbbox((0, 0), store_txt, font=sfont)
-            draw.text((hx0, hy + (pill_h - (sb[3] - sb[1])) // 2 - sb[1]),
-                      store_txt, font=sfont, fill=cfg["store_text"])
-        else:
-            _pill(draw, hx0, hy, store_txt, sfont, cfg["bg"],
+    if brand_right:
+        # marca arriba a la derecha (sin badge en el header)
+        if store_txt:
+            sw = int(draw.textlength(store_txt, font=sfont)) + 56
+            _pill(draw, hx1 - sw, hy, store_txt, sfont, cfg["bg"],
                   cfg["store_text"], h=pill_h)
-    if badge_txt:
-        bw = int(draw.textlength(badge_txt, font=bfont)) + 56
-        _pill(draw, hx1 - bw, hy, badge_txt, bfont, cfg["accent"],
-              cfg["badge_text"], h=pill_h)
+    else:
+        store_w = int(draw.textlength(store_txt, font=sfont)) if store_txt else 0
+        if not bar and store_txt:
+            store_w += 56
+        avail_badge = (hx1 - hx0) - store_w - 24
+        bsize = 36
+        while bsize >= 20:
+            if int(draw.textlength(header_badge, font=_font(bsize, True))) + 56 <= avail_badge:
+                break
+            bsize -= 2
+        bfont = _font(bsize, bold=True)
+        if store_txt:
+            if bar:
+                sb = draw.textbbox((0, 0), store_txt, font=sfont)
+                draw.text((hx0, hy + (pill_h - (sb[3] - sb[1])) // 2 - sb[1]),
+                          store_txt, font=sfont, fill=cfg["store_text"])
+            else:
+                _pill(draw, hx0, hy, store_txt, sfont, cfg["bg"],
+                      cfg["store_text"], h=pill_h)
+        if header_badge:
+            bw = int(draw.textlength(header_badge, font=bfont)) + 56
+            _pill(draw, hx1 - bw, hy, header_badge, bfont, cfg["accent"],
+                  cfg["badge_text"], h=pill_h)
 
-    # --- PANEL inferior (titulo + precio + tallas) ---
+    # --- PANEL inferior ---
     if cfg["panel"] == "bar":
         px0, py0, px1, py1 = 0, grid_bottom, W, H
         pmargin = 48
-    else:  # card flotante
+    else:
         px0, py0 = outer, grid_bottom + cfg["gap"]
         px1, py1 = W - outer, H - outer
         draw.rounded_rectangle([px0, py0, px1, py1], radius=32, fill=cfg["panel_bg"])
         pmargin = 44
 
     cx = px0 + pmargin
-    cy = py0 + 36
+    cy = py0 + 34
     panel_right = px1 - pmargin
 
     if title:
         t = title if len(title) <= 38 else title[:35] + "..."
-        draw.text((cx, cy), t.upper(), font=_font(36, bold=True), fill=cfg["sub"])
-        cy += 50
+        draw.text((cx, cy), t.upper(), font=_font(34, bold=True), fill=cfg["sub"])
+        cy += 48
 
     if price:
-        # encoger el precio si fuera muy ancho
-        psize = 112
+        psize = 108
         while psize >= 60:
-            pf = _font(psize, bold=True)
-            if int(draw.textlength(price, font=pf)) <= (panel_right - cx):
+            if int(draw.textlength(price, font=_font(psize, True))) <= (panel_right - cx):
                 break
             psize -= 4
-        pf = _font(psize, bold=True)
-        draw.text((cx, cy), price, font=pf, fill=cfg["text"])
-        cy += psize + 24
+        draw.text((cx, cy), price, font=_font(psize, bold=True), fill=cfg["text"])
+        cy += psize + 18
 
+    # apartado debajo del precio (pill de acento)
+    if layaway_below and badge_txt:
+        lf = _font(30, bold=True)
+        lw = int(draw.textlength(badge_txt, font=lf)) + 48
+        _pill(draw, cx, cy, badge_txt, lf, cfg["accent"], cfg["badge_text"], h=60)
+        cy += 60 + 24
+
+    # --- TALLAS: "Tallas disponibles:" en linea + chips (agotadas tachadas) ---
     if sizes:
-        sizes = [str(s).strip() for s in sizes if str(s).strip()][:10]
-        draw.text((cx, cy), "TALLAS DISPONIBLES", font=_font(28, bold=False),
-                  fill=cfg["sub"])
-        cy += 44
         usable = panel_right - cx
-        fsize, pad, gap = 40, 22, 14
-        while fsize >= 22:
+        label = "Tallas disponibles:"
+        # tamaño que haga caber etiqueta + chips en una linea
+        fsize, pad, gap = 38, 20, 12
+        while fsize >= 20:
+            lf = _font(int(fsize * 0.82), bold=True)
             cf = _font(fsize, bold=True)
-            total = sum(int(draw.textlength(s, font=cf)) + pad * 2 for s in sizes)
-            total += gap * (len(sizes) - 1)
+            lw = int(draw.textlength(label, font=lf)) + 18
+            total = lw + sum(int(draw.textlength(s, font=cf)) + pad * 2 for s in sizes)
+            total += gap * len(sizes)
             if total <= usable:
                 break
             fsize -= 2
             pad = max(12, pad - 1)
             gap = max(8, gap - 1)
-        cfont = _font(fsize, bold=True)
-        chip_h = fsize + 26
-        # asegurar que los chips no se salgan del panel por abajo
+        lf = _font(int(fsize * 0.82), bold=True)
+        cf = _font(fsize, bold=True)
+        chip_h = fsize + 24
         max_cy = py1 - chip_h - 22
         if cy > max_cy:
             cy = max_cy
-        sx = cx
+
+        # etiqueta alineada verticalmente al centro de los chips
+        lb = draw.textbbox((0, 0), label, font=lf)
+        draw.text((cx, cy + (chip_h - (lb[3] - lb[1])) // 2 - lb[1]),
+                  label, font=lf, fill=cfg["sub"])
+        sx = cx + int(draw.textlength(label, font=lf)) + 18
+
         for s in sizes:
-            tw = int(draw.textlength(s, font=cfont))
+            tw = int(draw.textlength(s, font=cf))
             cw = tw + pad * 2
-            draw.rounded_rectangle([sx, cy, sx + cw, cy + chip_h], radius=14,
-                                   fill=cfg["chip_bg"])
-            bb = draw.textbbox((0, 0), s, font=cfont)
+            agotada = s.upper() in sold_set
+            if agotada:
+                # chip apagado con contorno gris y tacha roja
+                draw.rounded_rectangle([sx, cy, sx + cw, cy + chip_h], radius=13,
+                                       outline=(170, 170, 170), width=3)
+                tcol = (165, 165, 165)
+            else:
+                draw.rounded_rectangle([sx, cy, sx + cw, cy + chip_h], radius=13,
+                                       fill=cfg["chip_bg"])
+                tcol = cfg["chip_text"]
+            bb = draw.textbbox((0, 0), s, font=cf)
             th = bb[3] - bb[1]
-            draw.text((sx + pad, cy + (chip_h - th) // 2 - bb[1]), s,
-                      font=cfont, fill=cfg["chip_text"])
+            draw.text((sx + pad, cy + (chip_h - th) // 2 - bb[1]), s, font=cf, fill=tcol)
+            if agotada:
+                ly = cy + chip_h // 2
+                draw.line([sx + 8, ly, sx + cw - 8, ly], fill=SOLD_OUT_RED, width=5)
             sx += cw + gap
 
     return canvas
