@@ -66,6 +66,25 @@
   .dlbtn { background:#26262e; margin-top:12px; display:block; text-align:center;
            text-decoration:none; color:#fff; border-radius:12px; padding:16px;
            font-weight:700; font-size:16px; }
+  .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+             gap:14px; margin-top:14px; }
+  .gitem { background:#101015; border:1px solid var(--line); border-radius:12px;
+           overflow:hidden; display:flex; flex-direction:column; }
+  .gitem img { width:100%; aspect-ratio:9/16; object-fit:cover; cursor:pointer; }
+  .gitem .ga { padding:10px; display:flex; flex-direction:column; gap:7px; }
+  .gitem button { padding:10px; font-size:13px; border-radius:8px; }
+  .gitem .pub { background:#c13584; }
+  .gitem .sch { background:#2a2a33; }
+  .gitem input[type=datetime-local] { width:100%; background:#0b0b0f;
+           border:1px solid var(--line); color:var(--txt); border-radius:8px;
+           padding:8px; font-size:13px; }
+  .gitem .badge { font-size:11px; color:var(--ok); text-align:center; }
+  .schitem { display:flex; align-items:center; gap:12px; background:#101015;
+           border:1px solid var(--line); border-radius:10px; padding:10px; margin-top:10px; }
+  .schitem img { width:46px; height:80px; object-fit:cover; border-radius:6px; }
+  .schitem .when { flex:1; font-size:14px; }
+  .schitem button { width:auto; padding:8px 12px; font-size:13px; background:#3a1620; }
+  .gmsg { font-size:12px; text-align:center; margin-top:4px; min-height:14px; }
   @media (max-width:720px){
     .wrap { padding:14px; } header { padding:16px; } header span { display:none; }
   }
@@ -149,12 +168,24 @@
       </div>
     </div>
   </div>
+
+  <div class="card">
+    <h2>📸 Galería de collages generados</h2>
+    <div class="hint">Cada collage que generes queda aquí. Publícalo al instante o prográmalo para después.</div>
+    <div id="gallery" class="gallery"></div>
+  </div>
+
+  <div class="card">
+    <h2>🕐 Publicaciones programadas</h2>
+    <div class="hint">Se publican solas a la hora que elijas (el robot revisa cada 15 min).</div>
+    <div id="scheduled"></div>
+  </div>
 </div>
 
 <script>
 const SIZES = ['XS','S','M','L','XL'];   // tallas que se venden
 let sizeOn = {};                          // {XS:true,...} true = disponible
-SIZES.forEach(s => sizeOn[s] = true);
+SIZES.forEach(s => sizeOn[s] = false);    // por defecto TODAS agotadas; tu marcas las que tienes
 
 let images = [];        // urls de las mejores fotos (auto)
 let productTitle = '';  // nombre del producto (auto)
@@ -236,12 +267,7 @@ async function fetchData(url){
 
   productTitle = d.title || '';
   if(!storeManual) $('store').value = d.store || '';
-  // marcar disponibles segun stock del producto (solo entre las que vendo)
-  if(d.sizes && d.sizes.length){
-    const stock = d.sizes.map(s => String(s).toUpperCase());
-    SIZES.forEach(s => sizeOn[s] = stock.includes(s));
-    renderSizes();
-  }
+  // NO tocamos las tallas: tu decides cuales tienes (quedan en agotada por defecto)
   priceUSD = (d.price_value != null) ? d.price_value : null;
   priceManual = false;
   recalcPrice();
@@ -291,6 +317,7 @@ async function generar(){
     lastImagePath = d.image_path || '';
     $('pubMsg').innerHTML = '';
     if(lastImagePath) $('pubBtn').style.display = 'block';
+    loadGallery();
   }catch(e){ setErr(e.message); }
   btn.disabled = false; btn.textContent = '✨ Generar collage';
 }
@@ -309,6 +336,86 @@ async function publicar(){
   }catch(e){ $('pubMsg').innerHTML = `<div class="err">${e.message}</div>`; }
   b.disabled = false; b.textContent = '📲 Publicar en mi historia';
 }
+
+// ===================== GALERIA Y PROGRAMACION =====================
+function pad(n){ return String(n).padStart(2,'0'); }
+function defaultDT(){
+  const d = new Date(Date.now() + 2*3600*1000); d.setMinutes(0);
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function fmtTime(epoch){
+  return new Date(epoch*1000).toLocaleString('es-MX',
+    {weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+}
+
+function loadGallery(){
+  fetch('/api/generated').then(r=>r.json()).then(d=>{
+    const g = $('gallery');
+    if(!d.items || !d.items.length){
+      g.innerHTML = '<div class="hint">Aún no hay collages. Genera uno arriba.</div>'; return;
+    }
+    g.innerHTML = d.items.map((it,i)=>{
+      const k = 'g'+i;
+      return `<div class="gitem">
+        <img src="${it.path}" onclick="window.open('${it.path}','_blank')">
+        <div class="ga">
+          <button class="pub" onclick="pubNow('${it.path}','${k}')">📲 Publicar ahora</button>
+          <input type="datetime-local" id="dt_${k}" value="${defaultDT()}">
+          <button class="sch" onclick="doSchedule('${it.path}','dt_${k}','${k}')">🕐 Programar</button>
+          <div class="gmsg" id="msg_${k}">${it.scheduled?'🕐 ya programado':''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  });
+}
+
+async function pubNow(path, k){
+  const m = $('msg_'+k); m.style.color='var(--muted)'; m.textContent='Publicando...';
+  try{
+    const r = await fetch('/api/publish',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({image_path:path})});
+    const d = await r.json(); if(!r.ok) throw new Error(d.error||'Error');
+    m.style.color='var(--ok)'; m.textContent='✓ Publicado en tu historia';
+  }catch(e){ m.style.color='#ff8aa0'; m.textContent=e.message; }
+}
+
+async function doSchedule(path, inputId, k){
+  const m = $('msg_'+k);
+  const val = $(inputId).value;
+  if(!val){ m.style.color='#ff8aa0'; m.textContent='Elige fecha y hora'; return; }
+  const epoch = Math.floor(new Date(val).getTime()/1000);
+  m.style.color='var(--muted)'; m.textContent='Programando...';
+  try{
+    const r = await fetch('/api/schedule',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({image_path:path, publish_at:epoch})});
+    const d = await r.json(); if(!r.ok) throw new Error(d.error||'Error');
+    m.style.color='var(--ok)'; m.textContent='✓ Programado';
+    loadScheduled();
+  }catch(e){ m.style.color='#ff8aa0'; m.textContent=e.message; }
+}
+
+function loadScheduled(){
+  fetch('/api/scheduled').then(r=>r.json()).then(d=>{
+    const s = $('scheduled');
+    if(!d.items || !d.items.length){
+      s.innerHTML = '<div class="hint">No hay nada programado.</div>'; return;
+    }
+    s.innerHTML = d.items.map(it=>`<div class="schitem">
+      <img src="${it.image_path}">
+      <div class="when">🕐 ${fmtTime(it.publish_at)}</div>
+      <button onclick="cancelSched('${it.id}')">Cancelar</button>
+    </div>`).join('');
+  });
+}
+
+async function cancelSched(id){
+  await fetch('/api/unschedule',{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify({id})});
+  loadScheduled();
+}
+
+loadGallery();
+loadScheduled();
 </script>
 </body>
 </html>

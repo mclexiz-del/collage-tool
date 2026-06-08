@@ -1,0 +1,20 @@
+name: Publicar historias programadas
+
+# Revisa cada 15 minutos si hay historias programadas que ya toca publicar.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publicar pendientes
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          APP_BASE: https://collage-tool.onrender.com
+        run: python3 tools/publish_scheduled.py

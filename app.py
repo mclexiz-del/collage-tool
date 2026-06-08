@@ -4,6 +4,7 @@ Uso:  ./venv/bin/python app.py   ->  abre http://127.0.0.1:5000
 """
 import base64
 import io
+import json
 import os
 import time
 import uuid
@@ -25,6 +26,51 @@ os.makedirs(GEN_DIR, exist_ok=True)
 # API de Instagram con "Instagram Login" (no requiere pagina de Facebook)
 GRAPH = "https://graph.instagram.com/v21.0"
 
+# Credenciales de Render (para leer/guardar la cola de programadas)
+RENDER_KEY = os.environ.get("RENDER_API_KEY")
+RENDER_SRV = os.environ.get("RENDER_SERVICE_ID")
+RENDER_BASE = f"https://api.render.com/v1/services/{RENDER_SRV}" if RENDER_SRV else None
+
+
+def _render_env_get(key):
+    if not (RENDER_KEY and RENDER_BASE):
+        return None
+    try:
+        r = creq.get(f"{RENDER_BASE}/env-vars?limit=100",
+                     headers={"Authorization": f"Bearer {RENDER_KEY}"}, timeout=30)
+        for it in r.json():
+            ev = it.get("envVar", {})
+            if ev.get("key") == key:
+                return ev.get("value")
+    except Exception:
+        return None
+    return None
+
+
+def _render_env_set(key, value):
+    if not (RENDER_KEY and RENDER_BASE):
+        return False
+    try:
+        creq.put(f"{RENDER_BASE}/env-vars/{key}",
+                 headers={"Authorization": f"Bearer {RENDER_KEY}",
+                          "Content-Type": "application/json"},
+                 json={"value": value}, timeout=30)
+        return True
+    except Exception:
+        return False
+
+
+def _get_schedule():
+    raw = _render_env_get("IG_SCHEDULE") or "[]"
+    try:
+        return json.loads(raw)
+    except Exception:
+        return []
+
+
+def _set_schedule(items):
+    return _render_env_set("IG_SCHEDULE", json.dumps(items))
+
 # guardamos el ultimo collage en memoria para descargar
 _last = {"png": None, "name": "collage.png"}
 _ig_cache = {"user_id": None}
@@ -45,8 +91,8 @@ def _ig_user_id(token):
     return uid
 
 
-def _purge_old(keep_seconds=3600):
-    """Borra collages generados con mas de 1 hora para no llenar el disco."""
+def _purge_old(keep_seconds=7 * 24 * 3600):
+    """Borra collages generados con mas de 7 dias para no llenar el disco."""
     now = time.time()
     try:
         for f in os.listdir(GEN_DIR):
@@ -216,6 +262,66 @@ def _ig_err(ctx, payload):
     err = (payload or {}).get("error", {})
     msg = err.get("error_user_msg") or err.get("message") or str(payload)
     return f"Instagram rechazo {ctx}: {msg}"
+
+
+@app.get("/api/generated")
+def api_generated():
+    """Lista los collages generados (galeria), mas recientes primero."""
+    items = []
+    sched_paths = {it.get("image_path") for it in _get_schedule()}
+    try:
+        for f in os.listdir(GEN_DIR):
+            if f.endswith(".png"):
+                p = os.path.join(GEN_DIR, f)
+                path = f"/static/generated/{f}"
+                items.append({"path": path, "ts": int(os.path.getmtime(p)),
+                              "scheduled": path in sched_paths})
+    except Exception:
+        pass
+    items.sort(key=lambda x: -x["ts"])
+    return jsonify({"items": items[:60]})
+
+
+@app.post("/api/schedule")
+def api_schedule():
+    """Agenda un collage para publicarse como historia en una fecha/hora."""
+    if not (RENDER_KEY and RENDER_BASE):
+        return jsonify({"error": "La programacion no esta disponible (falta config del servidor)."}), 400
+    body = request.json or {}
+    image_path = body.get("image_path", "")
+    publish_at = body.get("publish_at")
+    if not image_path.startswith("/static/generated/"):
+        return jsonify({"error": "Genera el collage primero."}), 400
+    try:
+        publish_at = int(publish_at)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Fecha/hora invalida."}), 400
+    if publish_at < int(time.time()) - 60:
+        return jsonify({"error": "Esa hora ya paso. Elige una futura."}), 400
+
+    items = _get_schedule()
+    items.append({"id": uuid.uuid4().hex[:10], "image_path": image_path,
+                  "publish_at": publish_at, "attempts": 0})
+    if not _set_schedule(items):
+        return jsonify({"error": "No pude guardar la programacion."}), 500
+    return jsonify({"ok": True})
+
+
+@app.get("/api/scheduled")
+def api_scheduled():
+    """Devuelve las publicaciones programadas pendientes."""
+    items = sorted(_get_schedule(), key=lambda x: x.get("publish_at", 0))
+    return jsonify({"items": items})
+
+
+@app.post("/api/unschedule")
+def api_unschedule():
+    """Cancela una publicacion programada."""
+    body = request.json or {}
+    sid = body.get("id")
+    items = [it for it in _get_schedule() if it.get("id") != sid]
+    _set_schedule(items)
+    return jsonify({"ok": True})
 
 
 @app.get("/download")
