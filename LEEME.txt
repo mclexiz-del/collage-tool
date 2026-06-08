@@ -1,0 +1,55 @@
+==========================================================
+  COLLAGE TOOL  ·  Collages de productos para Instagram
+==========================================================
+
+QUE HACE
+--------
+Pegas el link de un producto (Gymshark u otra tienda), descarga
+las fotos, el precio y las tallas automaticamente, y arma un
+collage cuadrado (1080x1080) listo para Instagram con:
+  - hasta 4 fotos del producto
+  - cuadro de PRECIO
+  - TALLAS disponibles
+  - badge "Apartado a 15 dias"
+  - tu marca en la esquina
+
+Todo se genera en tu computadora. NO usa OpenAI = sin costo.
+
+
+COMO USARLA
+-----------
+1. Doble clic en  "Iniciar Collage Tool.command"
+   (se abre una ventana negra y tu navegador en la herramienta)
+
+2. Pega el link del producto y toca "Traer fotos".
+
+3. Elige hasta 4 fotos (toca en el orden que quieras).
+
+4. Revisa/edita precio, tallas y el texto del badge.
+
+5. Toca "Generar collage" y luego "Descargar PNG".
+
+6. Para cerrar: cierra la ventana negra.
+
+
+SI UN LINK NO TRAE FOTOS
+------------------------
+- Gymshark y la mayoria de tiendas funcionan.
+- Instagram NO se puede (pide login y bloquea descargas).
+  Para fotos de Instagram: guardalas en tu compu y subelas
+  manualmente (proxima version) o usa el link de la tienda.
+
+
+SI MACOS DICE "no se puede abrir porque es de un
+desarrollador no identificado":
+  - Clic derecho sobre el archivo .command  >  Abrir  >  Abrir
+
+
+ARCHIVOS
+--------
+  app.py        servidor web
+  scraper.py    extrae fotos/precio/tallas de los links
+  collage.py    arma el collage con Pillow
+  static/       la interfaz web
+  venv/         librerias (no tocar)
+==========================================================
