@@ -152,16 +152,65 @@ def _render_env_set(key, value):
         return False
 
 
-def _get_schedule():
-    raw = _render_env_get("IG_SCHEDULE") or "[]"
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+SCHEDULE_FILE = os.path.join(DATA_DIR, "schedule.json")
+TOKEN_FILE = os.path.join(DATA_DIR, "ig_token.txt")
+_sched_lock = __import__("threading").Lock()
+
+
+def _get_token():
+    """Token de Instagram: archivo (se renueva solo) o variable de entorno."""
     try:
-        return json.loads(raw)
+        with open(TOKEN_FILE) as f:
+            t = f.read().strip()
+            if t:
+                return t
+    except Exception:
+        pass
+    return os.environ.get("IG_ACCESS_TOKEN")
+
+
+def _get_schedule():
+    # En servidor propio: archivo local. En Render (legacy): variable de entorno.
+    if RENDER_KEY and RENDER_BASE:
+        raw = _render_env_get("IG_SCHEDULE") or "[]"
+        try:
+            return json.loads(raw)
+        except Exception:
+            return []
+    try:
+        with open(SCHEDULE_FILE) as f:
+            return json.load(f)
     except Exception:
         return []
 
 
 def _set_schedule(items):
-    return _render_env_set("IG_SCHEDULE", json.dumps(items))
+    if RENDER_KEY and RENDER_BASE:
+        return _render_env_set("IG_SCHEDULE", json.dumps(items))
+    try:
+        tmp = SCHEDULE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(items, f)
+        os.replace(tmp, SCHEDULE_FILE)
+        return True
+    except Exception:
+        return False
+
+
+def _schedule_add(item):
+    with _sched_lock:
+        items = _get_schedule()
+        items.append(item)
+        return _set_schedule(items)
+
+
+def _schedule_remove(ids):
+    ids = set(ids)
+    with _sched_lock:
+        items = [it for it in _get_schedule() if it.get("id") not in ids]
+        _set_schedule(items)
 
 # guardamos el ultimo collage en memoria para descargar
 _last = {"png": None, "name": "collage.png"}
@@ -183,11 +232,18 @@ def _ig_user_id(token):
     return uid
 
 
-def _purge_old(keep_seconds=7 * 24 * 3600):
-    """Borra collages generados con mas de 7 dias para no llenar el disco."""
+def _purge_old(keep_seconds=30 * 24 * 3600):
+    """Borra collages con mas de 30 dias, sin tocar los programados."""
     now = time.time()
     try:
+        protected = set()
+        for it in _get_schedule():
+            ip = it.get("image_path") or ""
+            if ip:
+                protected.add(os.path.basename(ip))
         for f in os.listdir(GEN_DIR):
+            if f in protected:
+                continue
             p = os.path.join(GEN_DIR, f)
             if os.path.isfile(p) and now - os.path.getmtime(p) > keep_seconds:
                 os.remove(p)
@@ -308,7 +364,7 @@ def api_collage():
 @app.get("/api/ig_status")
 def ig_status():
     """Dice si Instagram esta conectado (y de que cuenta)."""
-    token = os.environ.get("IG_ACCESS_TOKEN")
+    token = _get_token()
     if not token:
         return jsonify({"configured": False})
     try:
@@ -350,7 +406,7 @@ def _publish_story(token, ig_user, public_url):
 @app.post("/api/publish")
 def api_publish():
     """Publica el collage como Historia en la cuenta de Instagram configurada."""
-    token = os.environ.get("IG_ACCESS_TOKEN")
+    token = _get_token()
     if not token:
         return jsonify({"error": "Falta configurar Instagram (token). Avisa para conectarlo."}), 400
     public_url = _src_public_url(request.json or {})
@@ -380,7 +436,7 @@ def run_due():
     if not _run_lock.acquire(blocking=False):
         return jsonify({"busy": True})
     try:
-        token = os.environ.get("IG_ACCESS_TOKEN")
+        token = _get_token()
         ig_user = _ig_user_id(token) if token else None
         if not (token and ig_user):
             return jsonify({"error": "sin token"}), 400
@@ -388,7 +444,7 @@ def run_due():
         due = [it for it in _get_schedule() if it.get("publish_at", 0) <= now]
         done = set()
         for it in due:
-            url = it.get("image_url") or (f"https://{request.host}{it.get('image_path','')}")
+            url = it.get("image_url") or _img_url(it.get("image_path", ""))
             try:
                 _publish_story(token, ig_user, url)
                 done.add(it["id"])
@@ -397,8 +453,7 @@ def run_due():
                 if it["attempts"] >= 3:
                     done.add(it["id"])  # descartar tras 3 intentos
         if done:
-            remaining = [it for it in _get_schedule() if it["id"] not in done]
-            _set_schedule(remaining)
+            _schedule_remove(done)
         return jsonify({"published": len(done), "pending": len(_get_schedule())})
     finally:
         _run_lock.release()
@@ -410,14 +465,22 @@ def _ig_err(ctx, payload):
     return f"Instagram rechazo {ctx}: {msg}"
 
 
+PUBLIC_BASE = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+
+
+def _img_url(image_path):
+    base = PUBLIC_BASE or f"https://{request.host}"
+    return f"{base}{image_path}"
+
+
 def _src_public_url(body):
-    """URL publica de la imagen: GitHub (permanente) o disco de Render."""
+    """URL publica de la imagen para que Instagram la pueda leer."""
     image_url = body.get("image_url", "") or ""
     image_path = body.get("image_path", "") or ""
     if image_url.startswith("http"):
         return image_url
     if image_path.startswith("/static/generated/"):
-        return f"https://{request.host}{image_path}"
+        return _img_url(image_path)
     return None
 
 
@@ -482,8 +545,6 @@ def api_delete_generated():
 @app.post("/api/schedule")
 def api_schedule():
     """Agenda un collage para publicarse como historia en una fecha/hora."""
-    if not (RENDER_KEY and RENDER_BASE):
-        return jsonify({"error": "La programacion no esta disponible (falta config del servidor)."}), 400
     body = request.json or {}
     publish_at = body.get("publish_at")
     try:
@@ -498,25 +559,19 @@ def api_schedule():
     image_path = body.get("image_path", "") or ""
 
     if image_url.startswith("http"):
-        # ya es permanente (galeria de GitHub); solo se referencia
         item = {"id": sid, "image_url": image_url, "image_path": None,
                 "repo_path": None, "publish_at": publish_at, "attempts": 0}
-    elif image_path.startswith("/static/generated/") and GH_TOKEN and GH_REPO:
+    elif image_path.startswith("/static/generated/"):
+        # imagen local en disco (permanente en el VPS)
         local = os.path.join(GEN_DIR, os.path.basename(image_path))
         if not os.path.exists(local):
             return jsonify({"error": "Ese collage ya no esta disponible. Generalo de nuevo."}), 400
-        with open(local, "rb") as fh:
-            url = _github_put_file(f"sched/{sid}.png", fh.read(), f"programar {sid}")
-        if not url:
-            return jsonify({"error": "No pude guardar la imagen para programar."}), 500
-        item = {"id": sid, "image_url": url, "image_path": image_path,
-                "repo_path": f"sched/{sid}.png", "publish_at": publish_at, "attempts": 0}
+        item = {"id": sid, "image_url": None, "image_path": image_path,
+                "repo_path": None, "publish_at": publish_at, "attempts": 0}
     else:
         return jsonify({"error": "Genera el collage primero."}), 400
 
-    items = _get_schedule()
-    items.append(item)
-    if not _set_schedule(items):
+    if not _schedule_add(item):
         return jsonify({"error": "No pude guardar la programacion."}), 500
     return jsonify({"ok": True})
 
@@ -532,9 +587,7 @@ def api_scheduled():
 def api_unschedule():
     """Cancela una publicacion programada."""
     body = request.json or {}
-    sid = body.get("id")
-    items = [it for it in _get_schedule() if it.get("id") != sid]
-    _set_schedule(items)
+    _schedule_remove([body.get("id")])
     return jsonify({"ok": True})
 
 
