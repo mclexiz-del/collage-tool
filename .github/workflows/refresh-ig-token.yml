@@ -1,0 +1,69 @@
+name: Renovar token de Instagram
+
+# Renueva el token de Instagram automaticamente (caduca cada ~60 dias).
+# Corre el dia 5 de cada mes y tambien se puede disparar a mano.
+
+on:
+  schedule:
+    - cron: "0 9 5 * *"   # dia 5 de cada mes, 09:00 UTC
+  workflow_dispatch:        # boton para correrlo manualmente
+
+permissions:
+  contents: write           # para el commit que mantiene vivo el cron
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Renovar y guardar token
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          set -e
+          BASE="https://api.render.com/v1/services/$RENDER_SERVICE_ID"
+
+          echo "1) Leyendo token actual desde Render..."
+          CUR=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" "$BASE/env-vars?limit=100" \
+                | jq -r '.[].envVar | select(.key=="IG_ACCESS_TOKEN") | .value')
+          if [ -z "$CUR" ] || [ "$CUR" = "null" ]; then
+            echo "::error::No encontre IG_ACCESS_TOKEN en Render"; exit 1
+          fi
+
+          echo "2) Pidiendo token nuevo a Instagram..."
+          RESP=$(curl -s "https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=$CUR")
+          NEW=$(echo "$RESP" | jq -r '.access_token // empty')
+
+          if [ -z "$NEW" ]; then
+            echo "No se renovo. Respuesta de Instagram: $RESP"
+            if echo "$RESP" | grep -qi "24 hours"; then
+              echo "El token es muy nuevo (<24h). Es normal hoy; el proximo mes si renueva."
+              exit 0
+            fi
+            echo "::error::Fallo la renovacion del token"; exit 1
+          fi
+
+          EXP=$(echo "$RESP" | jq -r '.expires_in // 0')
+          echo "Token renovado. Vence en ~$((EXP/86400)) dias."
+
+          echo "3) Guardando token nuevo en Render..."
+          curl -s -o /dev/null -w "PUT token -> %{http_code}\n" -X PUT \
+            -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" \
+            "$BASE/env-vars/IG_ACCESS_TOKEN" --data-binary "{\"value\":\"$NEW\"}"
+
+          echo "4) Redesplegando para que tome el token nuevo..."
+          curl -s -o /dev/null -w "deploy -> %{http_code}\n" -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" \
+            "$BASE/deploys" -d '{"clearCache":"do_not_clear"}'
+
+      - name: Mantener vivo el cron
+        run: |
+          mkdir -p .github
+          date -u "+ultima corrida: %Y-%m-%d %H:%M UTC" > .github/last_token_refresh.txt
+          git config user.name "token-bot"
+          git config user.email "token-bot@users.noreply.github.com"
+          git add .github/last_token_refresh.txt
+          git commit -m "chore: refresh token $(date -u +%Y-%m-%d)" || echo "sin cambios"
+          git push || echo "nada que empujar"
