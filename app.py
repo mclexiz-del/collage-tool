@@ -22,10 +22,27 @@ app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
 GEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "generated")
 os.makedirs(GEN_DIR, exist_ok=True)
 
-GRAPH = "https://graph.facebook.com/v21.0"
+# API de Instagram con "Instagram Login" (no requiere pagina de Facebook)
+GRAPH = "https://graph.instagram.com/v21.0"
 
 # guardamos el ultimo collage en memoria para descargar
 _last = {"png": None, "name": "collage.png"}
+_ig_cache = {"user_id": None}
+
+
+def _ig_user_id(token):
+    """Obtiene el ID de la cuenta de Instagram a partir del token (con cache)."""
+    if os.environ.get("IG_USER_ID"):
+        return os.environ["IG_USER_ID"]
+    if _ig_cache["user_id"]:
+        return _ig_cache["user_id"]
+    r = creq.get(f"{GRAPH}/me", params={"fields": "user_id,username",
+                                        "access_token": token}, timeout=30)
+    j = r.json()
+    uid = j.get("user_id") or j.get("id")
+    if uid:
+        _ig_cache["user_id"] = uid
+    return uid
 
 
 def _purge_old(keep_seconds=3600):
@@ -142,17 +159,26 @@ def api_collage():
 
 @app.get("/api/ig_status")
 def ig_status():
-    """Dice si ya estan configuradas las credenciales de Instagram."""
-    ok = bool(os.environ.get("IG_ACCESS_TOKEN") and os.environ.get("IG_USER_ID"))
-    return jsonify({"configured": ok})
+    """Dice si Instagram esta conectado (y de que cuenta)."""
+    token = os.environ.get("IG_ACCESS_TOKEN")
+    if not token:
+        return jsonify({"configured": False})
+    try:
+        r = creq.get(f"{GRAPH}/me", params={"fields": "user_id,username",
+                                            "access_token": token}, timeout=20)
+        j = r.json()
+        if j.get("username") or j.get("user_id") or j.get("id"):
+            return jsonify({"configured": True, "username": j.get("username", "")})
+        return jsonify({"configured": False, "error": _ig_err("validando el token", j)})
+    except Exception:
+        return jsonify({"configured": True, "username": ""})
 
 
 @app.post("/api/publish")
 def api_publish():
     """Publica el collage como Historia en la cuenta de Instagram configurada."""
     token = os.environ.get("IG_ACCESS_TOKEN")
-    ig_user = os.environ.get("IG_USER_ID")
-    if not token or not ig_user:
+    if not token:
         return jsonify({"error": "Falta configurar Instagram (token). Avisa para conectarlo."}), 400
 
     body = request.json or {}
@@ -164,6 +190,9 @@ def api_publish():
     public_url = f"https://{request.host}{image_path}"
 
     try:
+        ig_user = _ig_user_id(token)
+        if not ig_user:
+            return jsonify({"error": "No pude identificar tu cuenta de Instagram con ese token."}), 400
         # 1) crear contenedor de Historia
         r1 = creq.post(f"{GRAPH}/{ig_user}/media",
                        data={"image_url": public_url, "media_type": "STORIES",
