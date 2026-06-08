@@ -4,9 +4,12 @@ Uso:  ./venv/bin/python app.py   ->  abre http://127.0.0.1:5000
 """
 import base64
 import io
+import os
 import time
+import uuid
 from urllib.parse import urlparse
 
+from curl_cffi import requests as creq
 from flask import Flask, jsonify, request, send_file
 
 import collage
@@ -15,8 +18,26 @@ from scraper import scrape
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
 
+# carpeta publica para los collages generados (servida en /static/generated/)
+GEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "generated")
+os.makedirs(GEN_DIR, exist_ok=True)
+
+GRAPH = "https://graph.facebook.com/v21.0"
+
 # guardamos el ultimo collage en memoria para descargar
 _last = {"png": None, "name": "collage.png"}
+
+
+def _purge_old(keep_seconds=3600):
+    """Borra collages generados con mas de 1 hora para no llenar el disco."""
+    now = time.time()
+    try:
+        for f in os.listdir(GEN_DIR):
+            p = os.path.join(GEN_DIR, f)
+            if os.path.isfile(p) and now - os.path.getmtime(p) > keep_seconds:
+                os.remove(p)
+    except Exception:
+        pass
 
 
 @app.get("/")
@@ -104,8 +125,68 @@ def api_collage():
     _last["png"] = png
     _last["name"] = f"collage_{int(time.time())}.png"
 
+    # guardar como archivo publico (para poder publicarlo en Instagram)
+    _purge_old()
+    fname = f"{uuid.uuid4().hex}.png"
+    with open(os.path.join(GEN_DIR, fname), "wb") as fh:
+        fh.write(png)
+    image_path = f"/static/generated/{fname}"
+
     b64 = base64.b64encode(png).decode()
-    return jsonify({"image": f"data:image/png;base64,{b64}", "name": _last["name"]})
+    return jsonify({
+        "image": f"data:image/png;base64,{b64}",
+        "name": _last["name"],
+        "image_path": image_path,
+    })
+
+
+@app.get("/api/ig_status")
+def ig_status():
+    """Dice si ya estan configuradas las credenciales de Instagram."""
+    ok = bool(os.environ.get("IG_ACCESS_TOKEN") and os.environ.get("IG_USER_ID"))
+    return jsonify({"configured": ok})
+
+
+@app.post("/api/publish")
+def api_publish():
+    """Publica el collage como Historia en la cuenta de Instagram configurada."""
+    token = os.environ.get("IG_ACCESS_TOKEN")
+    ig_user = os.environ.get("IG_USER_ID")
+    if not token or not ig_user:
+        return jsonify({"error": "Falta configurar Instagram (token). Avisa para conectarlo."}), 400
+
+    body = request.json or {}
+    image_path = body.get("image_path", "")
+    if not image_path.startswith("/static/generated/"):
+        return jsonify({"error": "Genera el collage primero."}), 400
+
+    # URL publica del collage (forzar https para que Instagram lo pueda leer)
+    public_url = f"https://{request.host}{image_path}"
+
+    try:
+        # 1) crear contenedor de Historia
+        r1 = creq.post(f"{GRAPH}/{ig_user}/media",
+                       data={"image_url": public_url, "media_type": "STORIES",
+                             "access_token": token}, timeout=60)
+        j1 = r1.json()
+        if "id" not in j1:
+            return jsonify({"error": _ig_err("creando la historia", j1)}), 400
+        # 2) publicar
+        r2 = creq.post(f"{GRAPH}/{ig_user}/media_publish",
+                       data={"creation_id": j1["id"], "access_token": token}, timeout=60)
+        j2 = r2.json()
+        if "id" not in j2:
+            return jsonify({"error": _ig_err("publicando", j2)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Error conectando con Instagram: {e}"}), 500
+
+    return jsonify({"ok": True, "id": j2["id"]})
+
+
+def _ig_err(ctx, payload):
+    err = (payload or {}).get("error", {})
+    msg = err.get("error_user_msg") or err.get("message") or str(payload)
+    return f"Instagram rechazo {ctx}: {msg}"
 
 
 @app.get("/download")

@@ -5,3 +5,4 @@ output/
 server.log
 nohup.out
 .DS_Store
+static/generated/

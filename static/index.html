@@ -143,6 +143,9 @@
           <div class="empty">Pega un link y toca<br><b>Generar collage</b>.</div>
         </div>
         <a id="dlLink" class="dlbtn" download="collage.png" style="display:none">⬇️ Descargar PNG</a>
+        <button id="pubBtn" style="display:none; margin-top:10px; background:#c13584"
+                onclick="publicar()">📲 Publicar en mi historia</button>
+        <div id="pubMsg"></div>
       </div>
     </div>
   </div>
@@ -157,6 +160,7 @@ let images = [];        // urls de las mejores fotos (auto)
 let productTitle = '';  // nombre del producto (auto)
 let priceUSD = null;    // precio numerico en USD
 let lastUrl = '';       // ultimo link consultado
+let lastImagePath = '';  // ruta publica del ultimo collage (para publicar)
 let template = localStorage.getItem('tpl') || 'boutique';
 let priceManual = false, badgeManual = false, storeManual = false;
 
@@ -284,8 +288,26 @@ async function generar(){
     const dl = $('dlLink');
     dl.href = d.image; dl.download = d.name || 'collage.png';
     dl.style.display = 'block';
+    lastImagePath = d.image_path || '';
+    $('pubMsg').innerHTML = '';
+    if(lastImagePath) $('pubBtn').style.display = 'block';
   }catch(e){ setErr(e.message); }
   btn.disabled = false; btn.textContent = '✨ Generar collage';
+}
+
+async function publicar(){
+  if(!lastImagePath) return;
+  const b = $('pubBtn');
+  b.disabled = true; b.innerHTML = '<span class="spin"></span>Publicando en Instagram...';
+  $('pubMsg').innerHTML = '';
+  try{
+    const r = await fetch('/api/publish', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({image_path:lastImagePath})});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || 'Error');
+    $('pubMsg').innerHTML = '<div style="color:var(--ok);margin-top:10px;font-weight:600">✓ ¡Publicado en tu historia de Instagram!</div>';
+  }catch(e){ $('pubMsg').innerHTML = `<div class="err">${e.message}</div>`; }
+  b.disabled = false; b.textContent = '📲 Publicar en mi historia';
 }
 </script>
 </body>
