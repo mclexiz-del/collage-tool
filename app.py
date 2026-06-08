@@ -271,6 +271,16 @@ def api_publish():
         j1 = r1.json()
         if "id" not in j1:
             return jsonify({"error": _ig_err("creando la historia", j1)}), 400
+        # esperar a que el contenedor este listo
+        for _ in range(15):
+            st = creq.get(f"{GRAPH}/{j1['id']}",
+                          params={"fields": "status_code", "access_token": token},
+                          timeout=20).json()
+            if st.get("status_code") == "FINISHED":
+                break
+            if st.get("status_code") in ("ERROR", "EXPIRED"):
+                return jsonify({"error": "Instagram no pudo procesar la imagen."}), 400
+            time.sleep(2)
         # 2) publicar
         r2 = creq.post(f"{GRAPH}/{ig_user}/media_publish",
                        data={"creation_id": j1["id"], "access_token": token}, timeout=60)
