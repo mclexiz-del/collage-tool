@@ -70,7 +70,13 @@
              gap:14px; margin-top:14px; }
   .gitem { background:#101015; border:1px solid var(--line); border-radius:12px;
            overflow:hidden; display:flex; flex-direction:column; }
-  .gitem img { width:100%; aspect-ratio:9/16; object-fit:cover; cursor:pointer; }
+  .gimgwrap { position:relative; }
+  .gitem img { width:100%; aspect-ratio:9/16; object-fit:cover; cursor:pointer; display:block; }
+  .del { position:absolute; top:7px; right:7px; width:auto; padding:6px 9px;
+         font-size:14px; background:rgba(0,0,0,.65); border-radius:9px; line-height:1; }
+  .del:hover { background:var(--accent); }
+  .chip2.off { opacity:.38; text-decoration:line-through; cursor:not-allowed;
+         border-style:dashed; }
   .gitem .ga { padding:10px; display:flex; flex-direction:column; gap:7px; }
   .gitem button { padding:10px; font-size:13px; border-radius:8px; }
   .gitem .pub { background:#c13584; }
@@ -399,12 +405,16 @@ function loadGallery(){
     }
     g.innerHTML = d.items.map((it,i)=>{
       const k = 'g'+i;
+      const when = it.scheduled_at ? `🕐 Sale: ${fmtTime(it.scheduled_at)}` : '';
       return `<div class="gitem">
-        <img src="${it.path}" onclick="window.open('${it.path}','_blank')">
+        <div class="gimgwrap">
+          <img src="${it.path}" onclick="window.open('${it.path}','_blank')">
+          <button class="del" title="Eliminar" onclick="delGen('${it.path}')">🗑</button>
+        </div>
         <div class="ga">
           <button class="pub" onclick="pubNow('${it.path}','${k}')">📲 Publicar ahora</button>
           <button class="sch" onclick="openSched('${it.path}')">🕐 Programar</button>
-          <div class="gmsg" id="msg_${k}">${it.scheduled?'🕐 ya programado':''}</div>
+          <div class="gmsg" id="msg_${k}" style="${it.scheduled_at?'color:var(--ok)':''}">${when}</div>
         </div>
       </div>`;
     }).join('');
@@ -421,9 +431,19 @@ async function pubNow(path, k){
   }catch(e){ m.style.color='#ff8aa0'; m.textContent=e.message; }
 }
 
+async function delGen(path){
+  if(!confirm('¿Eliminar este collage de la galería?')) return;
+  try{
+    await fetch('/api/delete_generated',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({image_path:path})});
+  }catch(e){}
+  loadGallery();
+}
+
 // ---- Selector visual de dia y hora (modal) ----
 const MX_DAYS = ['dom','lun','mar','mié','jue','vie','sáb'];
 let schedPath = null, schedDay = null, schedHour = null, schedMin = 0;
+let scheduledItems = [];   // publicaciones ya programadas (para no encimar)
 
 function sameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
 function dayAt(offset){ const n=new Date(); return new Date(n.getFullYear(),n.getMonth(),n.getDate()+offset); }
@@ -433,15 +453,27 @@ function availableHours(day){
   for(let h=7;h<=23;h++){ if(isToday && h<=now.getHours()) continue; arr.push(h); }
   return arr;
 }
+// ¿ese dia+hora+minuto ya esta ocupado por otra publicacion programada?
+function slotTaken(day, hour, minute){
+  return scheduledItems.some(it=>{
+    const d=new Date(it.publish_at*1000);
+    return sameDay(d,day) && d.getHours()===hour && d.getMinutes()===minute;
+  });
+}
+function firstFreeMin(day, hour){
+  for(let m=0;m<60;m+=3){ if(!slotTaken(day,hour,m)) return m; }
+  return 0;
+}
 
-function openSched(path){
+async function openSched(path){
   schedPath = path;
+  try{ const r=await fetch('/api/scheduled'); scheduledItems=(await r.json()).items||[]; }catch(e){ scheduledItems=[]; }
   schedDay = dayAt(0);
   let av = availableHours(schedDay);
   if(av.length===0){ schedDay = dayAt(1); av = availableHours(schedDay); }
   const next = new Date().getHours()+1;
   schedHour = av.includes(next) ? next : av[0];
-  schedMin = 0;
+  schedMin = firstFreeMin(schedDay, schedHour);
   $('schedErr2').innerHTML='';
   renderDayChips(); renderHourChips(); renderMinChips(); updateSchedSummary();
   $('schedModal').style.display='flex';
@@ -461,17 +493,26 @@ function pickDay(i){
   schedDay=dayAt(i);
   const av=availableHours(schedDay);
   if(!av.includes(schedHour)) schedHour = av[0] ?? null;
-  renderDayChips(); renderHourChips(); updateSchedSummary();
+  if(schedHour!=null && slotTaken(schedDay,schedHour,schedMin)) schedMin=firstFreeMin(schedDay,schedHour);
+  renderDayChips(); renderHourChips(); renderMinChips(); updateSchedSummary();
 }
 function renderHourChips(){
   const av=availableHours(schedDay);
   if(!av.length){ $('hourChips').innerHTML='<div class="hint">No quedan horas hoy; elige otro día.</div>'; return; }
   $('hourChips').innerHTML = av.map(h=>`<div class="chip2 ${h===schedHour?'sel':''}" onclick="pickHour(${h})">${hourLabel(h)}</div>`).join('');
 }
-function pickHour(h){ schedHour=h; renderHourChips(); updateSchedSummary(); }
+function pickHour(h){
+  schedHour=h;
+  if(slotTaken(schedDay,h,schedMin)) schedMin=firstFreeMin(schedDay,h);
+  renderHourChips(); renderMinChips(); updateSchedSummary();
+}
 function renderMinChips(){
   let mins=[]; for(let m=0;m<60;m+=3) mins.push(m);
-  $('minChips').innerHTML=mins.map(m=>`<div class="chip2 ${m===schedMin?'sel':''}" onclick="pickMin(${m})">:${String(m).padStart(2,'0')}</div>`).join('');
+  $('minChips').innerHTML=mins.map(m=>{
+    if(schedHour!=null && slotTaken(schedDay,schedHour,m))
+      return `<div class="chip2 off" title="Ya tienes una publicación a esa hora">:${String(m).padStart(2,'0')}</div>`;
+    return `<div class="chip2 ${m===schedMin?'sel':''}" onclick="pickMin(${m})">:${String(m).padStart(2,'0')}</div>`;
+  }).join('');
 }
 function pickMin(m){ schedMin=m; renderMinChips(); updateSchedSummary(); }
 function schedDate(){ const d=new Date(schedDay); d.setHours(schedHour,schedMin,0,0); return d; }
@@ -482,6 +523,7 @@ function updateSchedSummary(){
 }
 async function confirmSched(){
   if(schedHour==null){ $('schedErr2').innerHTML='<div class="err">Elige una hora</div>'; return; }
+  if(slotTaken(schedDay,schedHour,schedMin)){ $('schedErr2').innerHTML='<div class="err">Ya tienes una publicación a esa hora; elige otro minuto.</div>'; return; }
   const epoch=Math.floor(schedDate().getTime()/1000);
   if(epoch < Math.floor(Date.now()/1000)){ $('schedErr2').innerHTML='<div class="err">Esa hora ya pasó</div>'; return; }
   try{
@@ -494,6 +536,7 @@ async function confirmSched(){
 
 function loadScheduled(){
   fetch('/api/scheduled').then(r=>r.json()).then(d=>{
+    scheduledItems = d.items || [];
     const s = $('scheduled');
     if(!d.items || !d.items.length){
       s.innerHTML = '<div class="hint">No hay nada programado.</div>'; return;

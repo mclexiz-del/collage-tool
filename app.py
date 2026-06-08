@@ -303,18 +303,35 @@ def _ig_err(ctx, payload):
 def api_generated():
     """Lista los collages generados (galeria), mas recientes primero."""
     items = []
-    sched_paths = {it.get("image_path") for it in _get_schedule()}
+    sched_map = {it.get("image_path"): it.get("publish_at") for it in _get_schedule()}
     try:
         for f in os.listdir(GEN_DIR):
             if f.endswith(".png"):
                 p = os.path.join(GEN_DIR, f)
                 path = f"/static/generated/{f}"
                 items.append({"path": path, "ts": int(os.path.getmtime(p)),
-                              "scheduled": path in sched_paths})
+                              "scheduled_at": sched_map.get(path)})
     except Exception:
         pass
     items.sort(key=lambda x: -x["ts"])
     return jsonify({"items": items[:60]})
+
+
+@app.post("/api/delete_generated")
+def api_delete_generated():
+    """Borra un collage de la galeria."""
+    body = request.json or {}
+    image_path = body.get("image_path", "")
+    if not image_path.startswith("/static/generated/"):
+        return jsonify({"error": "Ruta invalida."}), 400
+    fname = os.path.basename(image_path)
+    p = os.path.join(GEN_DIR, fname)
+    try:
+        if os.path.exists(p):
+            os.remove(p)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"ok": True})
 
 
 @app.post("/api/schedule")
